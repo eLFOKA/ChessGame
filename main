@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import QApplication, QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem
 from PyQt5.QtSvg import QGraphicsSvgItem
-from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtGui import QBrush, QColor, QTransform
 from PyQt5.QtCore import Qt, QPointF
 
 class ChessBoard(QGraphicsView):
@@ -60,23 +60,25 @@ class ChessBoard(QGraphicsView):
         self.scene.addItem(piece)
 
     def setStartingboardState(self):
-        if self.turnTimer == 0:
-            self.turnTimer = 1
-            for i in range(8):
-                for j in range(8):
-                    self.current_board_state[i][j] = 0
 
-            for item in self.scene.items():
-                if isinstance(item, ChessPiece):
-                    x = int(item.x() / 80)
-                    y = int(item.y() / 80)
-                    self.current_board_state[y][x] = 1
+        # Empty spaces
+        for i in range(2, 6):
+            for j in range(8):
+                self.current_board_state[i][j] = "Empty"
 
-            for item in self.scene.items():
-                if isinstance(item, King):
-                    x = int(item.x() / 80)
-                    y = int(item.y() / 80)
-                    self.current_board_state[y][x] = 2  
+        for i in range(8):
+            for j in range(2):
+                if i == 0 and j == 4:
+                    self.current_board_state[j][i] = "black_king"
+                else:
+                    self.current_board_state[j][i] = "black_piece"
+
+        for i in range(8):
+            for j in range(6, 8):
+                if i == 7 and j == 4:
+                    self.current_board_state[j][i] = "white_king"
+                else:
+                    self.current_board_state[j][i] = "white_piece"
 
     def getBoardState(self):
         return self.current_board_state
@@ -94,8 +96,88 @@ class ChessPiece(QGraphicsSvgItem):
         self.color = color
         self.chessboard = chessboard
         self.isKing = False
+        self.valid_move = False
+        self.direction = 1 if self.color == 'black' else -1
+
+    def mousePressEvent(self, event):
+        super(ChessPiece, self).mousePressEvent(event)
+
+        # Store the current grid position when the mouse is pressed
+        self.original_grid_x = int(self.x() / 80)
+        self.original_grid_y = int(self.y() / 80)
+
+        # Remove any existing move indicators from the scene
+        for item in self.scene().items():
+            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
+                self.scene().removeItem(item)
+
+    def validate_move(self):
+
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+
+        # Check bounds
+        if not (0 <= new_grid_x <= 7 and 0 <= new_grid_y <= 7):
+            self.return_to_original_position()
+            return
+
+        # checing condition if there is figure on the new position [exlcuding the case of pawn]
+        if self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
+
+            # cant move if there is friendly piece on the new position
+            if self.color == 'black':
+                if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_piece":
+                    self.return_to_original_position()
+                    return
+                else:
+                    self.valid_move = True
+            elif self.color == 'white':
+                if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_piece":
+                    self.return_to_original_position()
+                    return
+                else:
+                    self.valid_move = True
+
+            # cannot move if there is a king piece in the new position
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_king" or self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_king":
+                self.return_to_original_position()
+                return
+
+
+
+        # updating the board state and moving the piece if the move is valid
+        if self.valid_move == True:
+            self.cupture_piece()
+            self.setPos(new_x, new_y)
+            self.updateBoardStatus()
+            self.chessboard.switchTurns()
+            self.first_move = False
+
+    def cupture_piece(self):
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+
+        # remove piece that is being taken by player
+        for item in self.scene().items():
+            if isinstance(item, ChessPiece) and item.x() == new_x and item.y() == new_y:
+                self.scene().removeItem(item)
+                break
+
+    def return_to_original_position(self):
+        self.setPos(self.original_grid_x * 80, self.original_grid_y * 80)
+
+    def mouseReleaseEvent(self, event):
+        super(ChessPiece, self).mouseReleaseEvent(event)
+
+        self.validate_move()
+
+        self.setScale(self.default_scale)
+        
+        # Remove any existing move indicators from the scene
+        for item in self.scene().items():
+            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
+                self.scene().removeItem(item)
 
     def updateBoardStatus(self):
+
         # prevoius move of the piece
         prev_x = round(self.original_grid_x * 80)
         prev_y = round(self.original_grid_y * 80)
@@ -103,7 +185,7 @@ class ChessPiece(QGraphicsSvgItem):
         prev_grid_x = int(prev_x / 80)
         prev_grid_y = int(prev_y / 80)
 
-        self.chessboard.current_board_state[prev_grid_y][prev_grid_x] = 0
+        self.chessboard.current_board_state[prev_grid_y][prev_grid_x] = "Empty"
 
         # current move of the piece
         new_x = round(self.pos().x() / 80) * 80
@@ -112,22 +194,34 @@ class ChessPiece(QGraphicsSvgItem):
         new_grid_x = int(new_x / 80)
         new_grid_y = int(new_y / 80)
 
-        if self.isKing:
-            self.chessboard.current_board_state[new_grid_y][new_grid_x] = 2
-        else:
-            self.chessboard.current_board_state[new_grid_y][new_grid_x] = 1
+        if self.color == 'black':
+            if self.isKing:
+                self.chessboard.current_board_state[new_grid_y][new_grid_x] = "black_king"
+            else:
+                self.chessboard.current_board_state[new_grid_y][new_grid_x] = "black_piece"
+        elif self.color == 'white':
+            if self.isKing:
+                self.chessboard.current_board_state[new_grid_y][new_grid_x] = "white_king"
+            else:
+                self.chessboard.current_board_state[new_grid_y][new_grid_x] = "white_piece"
 
         self.printCurrentBoardStateInTerminal()
 
-        
+    def calculate_position(self):
+
+        new_x = round(self.pos().x() / 80) * 80
+        new_y = round(self.pos().y() / 80) * 80
+
+        new_grid_x = int(new_x / 80)
+        new_grid_y = int(new_y / 80)
+
+
+        return new_x, new_y, new_grid_x, new_grid_y
+    
     def printCurrentBoardStateInTerminal(self):
         for row in self.chessboard.current_board_state:
             print(row)
         print('\n')
-
-
-
-
 
 class Pawn(ChessPiece, QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -139,15 +233,6 @@ class Pawn(ChessPiece, QGraphicsSvgItem):
     def mousePressEvent(self, event):
         super(Pawn, self).mousePressEvent(event)  # Ensure the default behavior runs
         
-        # Store the current grid position when the mouse is pressed
-        self.original_grid_x = int(self.x() / 80)
-        self.original_grid_y = int(self.y() / 80)
-
-        # Remove any existing move indicators from the scene
-        for item in self.scene().items():
-            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
-                self.scene().removeItem(item)
-
         # Show possible moves
         move_1 = 1 if self.color == 'black' else -1
         rect1 = QGraphicsRectItem(80 * self.x() / 80, 80 * (self.y() / 80 + move_1), 80, 80)
@@ -161,54 +246,39 @@ class Pawn(ChessPiece, QGraphicsSvgItem):
             rect2.setBrush(QBrush(QColor(0, 255, 0, 127)))
             self.scene().addItem(rect2)
 
-    def mouseReleaseEvent(self, event):
-        # Calculate new position
-        new_x = round(self.pos().x() / 80) * 80
-        new_y = round(self.pos().y() / 80) * 80
 
-        new_grid_x = int(new_x / 80)
-        new_grid_y = int(new_y / 80)
+    def validate_move(self):
 
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
         direction = 1 if self.color == 'black' else -1
-        valid_move = False
-
-        # Validate move
+        
+        # check if the move is valid for pawn figure in first move
         if self.chessboard.current_turn == self.color:
             if new_grid_x == self.original_grid_x:
                 if self.first_move and new_grid_y - self.original_grid_y == 2 * direction:
-                    valid_move = True
+                    self.valid_move = True
                 elif new_grid_y - self.original_grid_y == direction:
-                    valid_move = True
+                    self.valid_move = True
         else:
-            valid_move = False
+            self.return_to_original_position()
+            return
 
-        # Check bounds
-        if not (0 <= new_grid_x <= 7 and 0 <= new_grid_y <= 7):
-            valid_move = False
+        # Only for Pawn figure, (if there is a figure in front of the pawn, it cannot move forward)
+        if self.color == 'black':
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_piece":
+                self.return_to_original_position()
+                return
+        elif self.color == 'white':
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_piece":
+                self.return_to_original_position()
+                return
+        
 
-        # Update or revert position
-        if not valid_move:
-            self.setPos(self.original_grid_x * 80, self.original_grid_y * 80)
-        else:
-            self.setPos(new_x, new_y)
-            self.first_move = False
-            self.updateBoardStatus()
-            if self.chessboard.current_turn == 'black':
-                self.chessboard.current_turn = 'white'
-            else:
-                self.chessboard.current_turn = 'black'
-        ##board_state = self.board.board_state
-        ##board_state[self.original_grid_y][self.original_grid_x] = False
-                
-        # Remove any existing move indicators from the scene
-        for item in self.scene().items():
-            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
-                self.scene().removeItem(item)
+        # if there is a enemy figure on oposite site of the pawn, it can move diagonally
 
-        self.setScale(self.default_scale)
-        super(Pawn, self).mouseReleaseEvent(event)
+
+        super(Pawn, self).validate_move()
     
-
 
 class Rook(ChessPiece):
     def __init__(self, image_path, x, y, color, board):
