@@ -12,18 +12,16 @@ class ChessBoard(QGraphicsView):
         self.setSceneRect(0, 0, 640, 640)
         self.drawBoard()
         self.addPieces()
+        self.current_turn = 'white'  # White starts the game
+        self.current_board_state = [[0 for _ in range(8)] for _ in range(8)]
         # Initialize the board state: False indicates an empty square
         ##self.board_state = [[False for _ in range(8)] for _ in range(8)]
         ##self.updateBoardState()
 
-    def updateBoardState(self):
-        # Reset the board state
-        self.board_state = [[False for _ in range(8)] for _ in range(8)]
-        # Mark positions with pieces as True
-        for item in self.scene.items():
-            if isinstance(item, ChessPiece):
-                x, y = int(item.x() / 80), int(item.y() / 80)
-                self.board_state[y][x] = True
+    # Method to switch turns
+    def switchTurns(self):
+        self.current_turn = 'black' if self.current_turn == 'white' else 'white'
+
 
     def drawBoard(self):
         light_color = QColor(173, 216, 230)  # Light blue
@@ -36,58 +34,89 @@ class ChessBoard(QGraphicsView):
 
     def addPieces(self):
         # Black pieces
-        self.addPiece(Rook("brook.svg", 0, 0, 'black'))
-        self.addPiece(Knight("bknight.svg", 1, 0, 'black'))
-        self.addPiece(Bishop("bbishop.svg", 2, 0, 'black'))
-        self.addPiece(Queen("bqueen.svg", 3, 0, 'black'))
-        self.addPiece(King("bking.svg", 4, 0, 'black'))
-        self.addPiece(Bishop("bbishop.svg", 5, 0, 'black'))
-        self.addPiece(Knight("bknight.svg", 6, 0, 'black'))
-        self.addPiece(Rook("brook.svg", 7, 0, 'black'))
+        self.addPiece(Rook("pieces/black/brook.svg", 0, 0, 'black',self))
+        self.addPiece(Knight("pieces/black/bknight.svg", 1, 0, 'black',self))
+        self.addPiece(Bishop("pieces/black/bbishop.svg", 2, 0, 'black',self))
+        self.addPiece(Queen("pieces/black/bqueen.svg", 3, 0, 'black',self))
+        self.addPiece(King("pieces/black/bking.svg", 4, 0, 'black',self))
+        self.addPiece(Bishop("pieces/black/bbishop.svg", 5, 0, 'black',self))
+        self.addPiece(Knight("pieces/black/bknight.svg", 6, 0, 'black',self))
+        self.addPiece(Rook("pieces/black/brook.svg", 7, 0, 'black',self))
         for i in range(8):
-            self.addPiece(Pawn("bpawn.svg", i, 1, 'black'))
+            self.addPiece(Pawn("pieces/black/bpawn.svg", i, 1, 'black', self))
         
         # White pieces
-        self.addPiece(Rook("wrook.svg", 0, 7, 'white'))
-        self.addPiece(Knight("wknight.svg", 1, 7, 'white'))
-        self.addPiece(Bishop("wbishop.svg", 2, 7, 'white'))
-        self.addPiece(Queen("wqueen.svg", 3, 7, 'white'))
-        self.addPiece(King("wking.svg", 4, 7, 'white'))
-        self.addPiece(Bishop("wbishop.svg", 5, 7, 'white'))
-        self.addPiece(Knight("wknight.svg", 6, 7, 'white'))
-        self.addPiece(Rook("wrook.svg", 7, 7, 'white'))
+        self.addPiece(Rook("pieces/white/wrook.svg", 0, 7, 'white',self))
+        self.addPiece(Knight("pieces/white/wknight.svg", 1, 7, 'white',self))
+        self.addPiece(Bishop("pieces/white/wbishop.svg", 2, 7, 'white',self))
+        self.addPiece(Queen("pieces/white/wqueen.svg", 3, 7, 'white',self))
+        self.addPiece(King("pieces/white/wking.svg", 4, 7, 'white',self))
+        self.addPiece(Bishop("pieces/white/wbishop.svg", 5, 7, 'white',self))
+        self.addPiece(Knight("pieces/white/wknight.svg", 6, 7, 'white',self))
+        self.addPiece(Rook("pieces/white/wrook.svg", 7, 7, 'white',self))
         for i in range(8):
-            self.addPiece(Pawn("wpawn.svg", i, 6, 'white'))
+            self.addPiece(Pawn("pieces/white/wpawn.svg", i, 6, 'white', self))
 
     def addPiece(self, piece):
         self.scene.addItem(piece)
-        self.updateBoardState()  # Update the board state after adding a piece
+
+    def setStartingboardState(self):
+        for i in range(8):
+            for j in range(8):
+                self.current_board_state[i][j] = False
+
     
 
 class ChessPiece(QGraphicsSvgItem):
-    def __init__(self, image_path, x, y, parent=None):
+    def __init__(self, image_path, x, y, color, chessboard):
         super(ChessPiece, self).__init__(image_path)
         self.setPos(x * 80, y * 80)
         self.default_scale = 1.8
         self.setScale(self.default_scale)
         self.setFlag(QGraphicsItem.ItemIsMovable)
         self.setFlag(QGraphicsItem.ItemIsSelectable)
+        self.color = color
+        self.chessboard = chessboard
 
     def mousePressEvent(self, event):
         # Increase the scale slightly when the piece is clicked
-        self.setScale(self.default_scale * 1.1)  # Enlarge by 10%
-        QGraphicsSvgItem.mousePressEvent(self, event)  # Propagate the event
+        if self.chessboard.current_turn == self.color:
+            self.setScale(self.default_scale * 1.1)
+            super(ChessPiece, self).mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
         super(ChessPiece, self).mouseReleaseEvent(event)
         # After moving, update the board state
+    
+    def mouseReleaseEvent(self, event):
+        # Reset scale and call superclass method
+        self.setScale(self.default_scale)
+        super(ChessPiece, self).mouseReleaseEvent(event)
+
+    def updateBoardStatus(self):
+        # Store the current grid position when the mouse is pressed
+        self.original_grid_x = int(self.x() / 80)
+        self.original_grid_y = int(self.y() / 80)
+
+        self.chessboard.current_board_state[self.original_grid_y][self.original_grid_x] = True
+        
+        new_x = round(self.pos().x() / 80) * 80
+        new_y = round(self.pos().y() / 80) * 80
+
+        new_grid_x = int(new_x / 80)
+        new_grid_y = int(new_y / 80)
+
+        self.chessboard.current_board_state[new_grid_y][new_grid_x] = True
+
+
 
 
 class Pawn(ChessPiece):
-    def __init__(self, image_path, x, y, color='black', parent=None):
-        super(Pawn, self).__init__(image_path, x, y, parent)
+    def __init__(self, image_path, x, y, color, chessboard):
+        super(Pawn, self).__init__(image_path, x, y, color, chessboard)  # Corrected parameter passing
         self.color = color
         self.first_move = True
+        self.chessboard = chessboard
 
     def mousePressEvent(self, event):
         super(Pawn, self).mousePressEvent(event)  # Ensure the default behavior runs
@@ -126,12 +155,14 @@ class Pawn(ChessPiece):
         valid_move = False
 
         # Validate move
-        if new_grid_x == self.original_grid_x:
-            if self.first_move and new_grid_y - self.original_grid_y == 2 * direction:
-                valid_move = True
-                self.first_move = False
-            elif new_grid_y - self.original_grid_y == direction:
-                valid_move = True
+        if self.chessboard.current_turn == self.color:
+            if new_grid_x == self.original_grid_x:
+                if self.first_move and new_grid_y - self.original_grid_y == 2 * direction:
+                    valid_move = True
+                elif new_grid_y - self.original_grid_y == direction:
+                    valid_move = True
+        else:
+            valid_move = False
 
         # Check bounds
         if not (0 <= new_grid_x <= 7 and 0 <= new_grid_y <= 7):
@@ -142,9 +173,19 @@ class Pawn(ChessPiece):
             self.setPos(self.original_grid_x * 80, self.original_grid_y * 80)
         else:
             self.setPos(new_x, new_y)
-
+            self.first_move = False
+            self.updateBoardStatus()
+            if self.chessboard.current_turn == 'black':
+                self.chessboard.current_turn = 'white'
+            else:
+                self.chessboard.current_turn = 'black'
         ##board_state = self.board.board_state
         ##board_state[self.original_grid_y][self.original_grid_x] = False
+                
+        # Remove any existing move indicators from the scene
+        for item in self.scene().items():
+            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
+                self.scene().removeItem(item)
 
         self.setScale(self.default_scale)
         super(Pawn, self).mouseReleaseEvent(event)
@@ -152,12 +193,20 @@ class Pawn(ChessPiece):
 
 
 class Rook(ChessPiece):
-    def __init__(self, image_path, x, y, color='black', parent=None):
-        super(Rook, self).__init__(image_path, x, y, parent)
-        self.color = color
+    def __init__(self, image_path, x, y, color, board):
+        super(Rook, self).__init__(image_path, x, y, color, board)
 
     def mousePressEvent(self, event):
         # Logic for showing possible moves for a rook can be added here
+        
+        #show posible moves of rook in 4 directions with if statemanet that rect wont be painted outside of chessboard
+
+        move_1 = 1
+        rect1 = QGraphicsRectItem(80 * self.x() / 80, 80 * (self.y() / 80 + move_1), 80, 80)
+        rect1.setBrush(QBrush(QColor(0, 255, 0, 127)))
+        self.scene().addItem(rect1)
+        
+        
         self.setScale(self.default_scale * 1.1)
         super(Rook, self).mousePressEvent(event)
 
