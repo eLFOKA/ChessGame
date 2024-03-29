@@ -1,0 +1,213 @@
+import sys
+from PyQt5.QtWidgets import QApplication, QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem
+from PyQt5.QtSvg import QGraphicsSvgItem
+from PyQt5.QtGui import QBrush, QColor
+from PyQt5.QtCore import Qt, QPointF
+
+class ChessBoard(QGraphicsView):
+    def __init__(self):
+        super(ChessBoard, self).__init__()
+        self.scene = QGraphicsScene(self)
+        self.setScene(self.scene)
+        self.setSceneRect(0, 0, 640, 640)
+        self.drawBoard()
+        self.addPieces()
+        # Initialize the board state: False indicates an empty square
+        ##self.board_state = [[False for _ in range(8)] for _ in range(8)]
+        ##self.updateBoardState()
+
+    def updateBoardState(self):
+        # Reset the board state
+        self.board_state = [[False for _ in range(8)] for _ in range(8)]
+        # Mark positions with pieces as True
+        for item in self.scene.items():
+            if isinstance(item, ChessPiece):
+                x, y = int(item.x() / 80), int(item.y() / 80)
+                self.board_state[y][x] = True
+
+    def drawBoard(self):
+        light_color = QColor(173, 216, 230)  # Light blue
+        dark_color = QColor(0, 0, 139)       # Dark blue
+        for i in range(8):
+            for j in range(8):
+                rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
+                rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
+                self.scene.addItem(rect)
+
+    def addPieces(self):
+        # Black pieces
+        self.addPiece(Rook("brook.svg", 0, 0, 'black'))
+        self.addPiece(Knight("bknight.svg", 1, 0, 'black'))
+        self.addPiece(Bishop("bbishop.svg", 2, 0, 'black'))
+        self.addPiece(Queen("bqueen.svg", 3, 0, 'black'))
+        self.addPiece(King("bking.svg", 4, 0, 'black'))
+        self.addPiece(Bishop("bbishop.svg", 5, 0, 'black'))
+        self.addPiece(Knight("bknight.svg", 6, 0, 'black'))
+        self.addPiece(Rook("brook.svg", 7, 0, 'black'))
+        for i in range(8):
+            self.addPiece(Pawn("bpawn.svg", i, 1, 'black'))
+        
+        # White pieces
+        self.addPiece(Rook("wrook.svg", 0, 7, 'white'))
+        self.addPiece(Knight("wknight.svg", 1, 7, 'white'))
+        self.addPiece(Bishop("wbishop.svg", 2, 7, 'white'))
+        self.addPiece(Queen("wqueen.svg", 3, 7, 'white'))
+        self.addPiece(King("wking.svg", 4, 7, 'white'))
+        self.addPiece(Bishop("wbishop.svg", 5, 7, 'white'))
+        self.addPiece(Knight("wknight.svg", 6, 7, 'white'))
+        self.addPiece(Rook("wrook.svg", 7, 7, 'white'))
+        for i in range(8):
+            self.addPiece(Pawn("wpawn.svg", i, 6, 'white'))
+
+    def addPiece(self, piece):
+        self.scene.addItem(piece)
+        self.updateBoardState()  # Update the board state after adding a piece
+    
+
+class ChessPiece(QGraphicsSvgItem):
+    def __init__(self, image_path, x, y, parent=None):
+        super(ChessPiece, self).__init__(image_path)
+        self.setPos(x * 80, y * 80)
+        self.default_scale = 1.8
+        self.setScale(self.default_scale)
+        self.setFlag(QGraphicsItem.ItemIsMovable)
+        self.setFlag(QGraphicsItem.ItemIsSelectable)
+
+    def mousePressEvent(self, event):
+        # Increase the scale slightly when the piece is clicked
+        self.setScale(self.default_scale * 1.1)  # Enlarge by 10%
+        QGraphicsSvgItem.mousePressEvent(self, event)  # Propagate the event
+
+    def mouseReleaseEvent(self, event):
+        super(ChessPiece, self).mouseReleaseEvent(event)
+        # After moving, update the board state
+
+
+class Pawn(ChessPiece):
+    def __init__(self, image_path, x, y, color='black', parent=None):
+        super(Pawn, self).__init__(image_path, x, y, parent)
+        self.color = color
+        self.first_move = True
+
+    def mousePressEvent(self, event):
+        super(Pawn, self).mousePressEvent(event)  # Ensure the default behavior runs
+        
+        # Store the current grid position when the mouse is pressed
+        self.original_grid_x = int(self.x() / 80)
+        self.original_grid_y = int(self.y() / 80)
+
+        # Remove any existing move indicators from the scene
+        for item in self.scene().items():
+            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
+                self.scene().removeItem(item)
+
+        # Show possible moves
+        move_1 = 1 if self.color == 'black' else -1
+        rect1 = QGraphicsRectItem(80 * self.x() / 80, 80 * (self.y() / 80 + move_1), 80, 80)
+        rect1.setBrush(QBrush(QColor(0, 255, 0, 127)))
+        self.scene().addItem(rect1)
+
+        # Show second move if it's the first move of the pawn
+        if self.first_move:
+            move_2 = 2 if self.color == 'black' else -2
+            rect2 = QGraphicsRectItem(80 * self.x() / 80, 80 * (self.y() / 80 + move_2), 80, 80)
+            rect2.setBrush(QBrush(QColor(0, 255, 0, 127)))
+            self.scene().addItem(rect2)
+
+    def mouseReleaseEvent(self, event):
+        # Calculate new position
+        new_x = round(self.pos().x() / 80) * 80
+        new_y = round(self.pos().y() / 80) * 80
+
+        new_grid_x = int(new_x / 80)
+        new_grid_y = int(new_y / 80)
+
+        direction = 1 if self.color == 'black' else -1
+        valid_move = False
+
+        # Validate move
+        if new_grid_x == self.original_grid_x:
+            if self.first_move and new_grid_y - self.original_grid_y == 2 * direction:
+                valid_move = True
+                self.first_move = False
+            elif new_grid_y - self.original_grid_y == direction:
+                valid_move = True
+
+        # Check bounds
+        if not (0 <= new_grid_x <= 7 and 0 <= new_grid_y <= 7):
+            valid_move = False
+
+        # Update or revert position
+        if not valid_move:
+            self.setPos(self.original_grid_x * 80, self.original_grid_y * 80)
+        else:
+            self.setPos(new_x, new_y)
+
+        ##board_state = self.board.board_state
+        ##board_state[self.original_grid_y][self.original_grid_x] = False
+
+        self.setScale(self.default_scale)
+        super(Pawn, self).mouseReleaseEvent(event)
+    
+
+
+class Rook(ChessPiece):
+    def __init__(self, image_path, x, y, color='black', parent=None):
+        super(Rook, self).__init__(image_path, x, y, parent)
+        self.color = color
+
+    def mousePressEvent(self, event):
+        # Logic for showing possible moves for a rook can be added here
+        self.setScale(self.default_scale * 1.1)
+        super(Rook, self).mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # You might add more complex move validation logic here later
+        self.setScale(self.default_scale)
+        super(Rook, self).mouseReleaseEvent(event)
+
+class Knight(ChessPiece):
+    def mouseReleaseEvent(self, event):
+        # Knight logic: L-shaped moves
+        x_diff = abs(self.x() - event.lastPos().x())
+        y_diff = abs(self.y() - event.lastPos().y())
+        if not ((x_diff == 160 and y_diff == 80) or (x_diff == 80 and y_diff == 160)):
+            self.setPos(event.lastPos())
+        else:
+            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
+        super(Knight, self).mouseReleaseEvent(event)
+
+class Bishop(ChessPiece):
+    def mouseReleaseEvent(self, event):
+        # Bishop logic: can move diagonally
+        if abs(self.x() - event.lastPos().x()) != abs(self.y() - event.lastPos().y()):
+            self.setPos(event.lastPos())
+        else:
+            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
+        super(Bishop, self).mouseReleaseEvent(event)
+
+class Queen(ChessPiece):
+    def mouseReleaseEvent(self, event):
+        # Queen logic: combines rook and bishop
+        if self.x() != event.lastPos().x() and self.y() != event.lastPos().y() and \
+           abs(self.x() - event.lastPos().x()) != abs(self.y() - event.lastPos().y()):
+            self.setPos(event.lastPos())
+        else:
+            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
+        super(Queen, self).mouseReleaseEvent(event)
+
+class King(ChessPiece):
+    def mouseReleaseEvent(self, event):
+        # King logic: one square any direction
+        if abs(self.x() - event.lastPos().x()) > 80 or abs(self.y() - event.lastPos().y()) > 80:
+            self.setPos(event.lastPos())
+        else:
+            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
+        super(King, self).mouseReleaseEvent(event)
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    board = ChessBoard()
+    board.show()
+    sys.exit(app.exec_())
