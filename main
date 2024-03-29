@@ -14,9 +14,8 @@ class ChessBoard(QGraphicsView):
         self.addPieces()
         self.current_turn = 'white'  # White starts the game
         self.current_board_state = [[0 for _ in range(8)] for _ in range(8)]
-        # Initialize the board state: False indicates an empty square
-        ##self.board_state = [[False for _ in range(8)] for _ in range(8)]
-        ##self.updateBoardState()
+        self.turnTimer = 0
+        self.setStartingboardState()
 
     # Method to switch turns
     def switchTurns(self):
@@ -61,9 +60,26 @@ class ChessBoard(QGraphicsView):
         self.scene.addItem(piece)
 
     def setStartingboardState(self):
-        for i in range(8):
-            for j in range(8):
-                self.current_board_state[i][j] = False
+        if self.turnTimer == 0:
+            self.turnTimer = 1
+            for i in range(8):
+                for j in range(8):
+                    self.current_board_state[i][j] = 0
+
+            for item in self.scene.items():
+                if isinstance(item, ChessPiece):
+                    x = int(item.x() / 80)
+                    y = int(item.y() / 80)
+                    self.current_board_state[y][x] = 1
+
+            for item in self.scene.items():
+                if isinstance(item, King):
+                    x = int(item.x() / 80)
+                    y = int(item.y() / 80)
+                    self.current_board_state[y][x] = 2  
+
+    def getBoardState(self):
+        return self.current_board_state
 
     
 
@@ -77,41 +93,43 @@ class ChessPiece(QGraphicsSvgItem):
         self.setFlag(QGraphicsItem.ItemIsSelectable)
         self.color = color
         self.chessboard = chessboard
-
-    def mousePressEvent(self, event):
-        # Increase the scale slightly when the piece is clicked
-        if self.chessboard.current_turn == self.color:
-            self.setScale(self.default_scale * 1.1)
-            super(ChessPiece, self).mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        super(ChessPiece, self).mouseReleaseEvent(event)
-        # After moving, update the board state
-    
-    def mouseReleaseEvent(self, event):
-        # Reset scale and call superclass method
-        self.setScale(self.default_scale)
-        super(ChessPiece, self).mouseReleaseEvent(event)
+        self.isKing = False
 
     def updateBoardStatus(self):
-        # Store the current grid position when the mouse is pressed
-        self.original_grid_x = int(self.x() / 80)
-        self.original_grid_y = int(self.y() / 80)
+        # prevoius move of the piece
+        prev_x = round(self.original_grid_x * 80)
+        prev_y = round(self.original_grid_y * 80)
 
-        self.chessboard.current_board_state[self.original_grid_y][self.original_grid_x] = True
-        
+        prev_grid_x = int(prev_x / 80)
+        prev_grid_y = int(prev_y / 80)
+
+        self.chessboard.current_board_state[prev_grid_y][prev_grid_x] = 0
+
+        # current move of the piece
         new_x = round(self.pos().x() / 80) * 80
         new_y = round(self.pos().y() / 80) * 80
 
         new_grid_x = int(new_x / 80)
         new_grid_y = int(new_y / 80)
 
-        self.chessboard.current_board_state[new_grid_y][new_grid_x] = True
+        if self.isKing:
+            self.chessboard.current_board_state[new_grid_y][new_grid_x] = 2
+        else:
+            self.chessboard.current_board_state[new_grid_y][new_grid_x] = 1
+
+        self.printCurrentBoardStateInTerminal()
+
+        
+    def printCurrentBoardStateInTerminal(self):
+        for row in self.chessboard.current_board_state:
+            print(row)
+        print('\n')
 
 
 
 
-class Pawn(ChessPiece):
+
+class Pawn(ChessPiece, QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
         super(Pawn, self).__init__(image_path, x, y, color, chessboard)  # Corrected parameter passing
         self.color = color
@@ -246,6 +264,10 @@ class Queen(ChessPiece):
         super(Queen, self).mouseReleaseEvent(event)
 
 class King(ChessPiece):
+    def __init__(self, image_path, x, y, color, board):
+        super(King, self).__init__(image_path, x, y, color, board)
+        self.isKing = True
+
     def mouseReleaseEvent(self, event):
         # King logic: one square any direction
         if abs(self.x() - event.lastPos().x()) > 80 or abs(self.y() - event.lastPos().y()) > 80:
