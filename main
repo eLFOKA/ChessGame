@@ -98,6 +98,7 @@ class ChessPiece(QGraphicsSvgItem):
         self.isKing = False
         self.valid_move = False
         self.direction = 1 if self.color == 'black' else -1
+        self.oposite_color = 'white' if self.color == 'black' else 'black'
 
     def mousePressEvent(self, event):
         super(ChessPiece, self).mousePressEvent(event)
@@ -105,11 +106,6 @@ class ChessPiece(QGraphicsSvgItem):
         # Store the current grid position when the mouse is pressed
         self.original_grid_x = int(self.x() / 80)
         self.original_grid_y = int(self.y() / 80)
-
-        # Remove any existing move indicators from the scene
-        for item in self.scene().items():
-            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
-                self.scene().removeItem(item)
 
     def validate_move(self):
 
@@ -142,6 +138,10 @@ class ChessPiece(QGraphicsSvgItem):
                 self.return_to_original_position()
                 return
 
+        # if the piece is not the color of the current turn, it cannot move
+        if self.color != self.chessboard.current_turn:
+            self.return_to_original_position()
+            return
 
 
         # updating the board state and moving the piece if the move is valid
@@ -205,7 +205,7 @@ class ChessPiece(QGraphicsSvgItem):
             else:
                 self.chessboard.current_board_state[new_grid_y][new_grid_x] = "white_piece"
 
-        self.printCurrentBoardStateInTerminal()
+        # self.printCurrentBoardStateInTerminal()
 
     def calculate_position(self):
 
@@ -223,6 +223,11 @@ class ChessPiece(QGraphicsSvgItem):
             print(row)
         print('\n')
 
+    def getPreviousGridPosition(self):
+        return self.original_grid_x, self.original_grid_y   
+
+
+
 class Pawn(ChessPiece, QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
         super(Pawn, self).__init__(image_path, x, y, color, chessboard)  # Corrected parameter passing
@@ -230,121 +235,199 @@ class Pawn(ChessPiece, QGraphicsSvgItem):
         self.first_move = True
         self.chessboard = chessboard
 
-    def mousePressEvent(self, event):
-        super(Pawn, self).mousePressEvent(event)  # Ensure the default behavior runs
-        
-        # Show possible moves
-        move_1 = 1 if self.color == 'black' else -1
-        rect1 = QGraphicsRectItem(80 * self.x() / 80, 80 * (self.y() / 80 + move_1), 80, 80)
-        rect1.setBrush(QBrush(QColor(0, 255, 0, 127)))
-        self.scene().addItem(rect1)
-
-        # Show second move if it's the first move of the pawn
-        if self.first_move:
-            move_2 = 2 if self.color == 'black' else -2
-            rect2 = QGraphicsRectItem(80 * self.x() / 80, 80 * (self.y() / 80 + move_2), 80, 80)
-            rect2.setBrush(QBrush(QColor(0, 255, 0, 127)))
-            self.scene().addItem(rect2)
-
-
     def validate_move(self):
-
         new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
-        direction = 1 if self.color == 'black' else -1
-        
-        # check if the move is valid for pawn figure in first move
-        if self.chessboard.current_turn == self.color:
-            if new_grid_x == self.original_grid_x:
-                if self.first_move and new_grid_y - self.original_grid_y == 2 * direction:
-                    self.valid_move = True
-                elif new_grid_y - self.original_grid_y == direction:
-                    self.valid_move = True
+        original_grid_x, original_grid_y = self.getPreviousGridPosition()
+
+        # pawn can move one square forward
+        if self.color == "white" and new_grid_y == original_grid_y - 1 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+            self.valid_move = True
+        elif self.color == "black" and new_grid_y == original_grid_y + 1 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+            self.valid_move = True
+        # pawn can move two squares forward on its first move
+        elif self.first_move and self.color == "white" and new_grid_y == original_grid_y - 2 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y + 1][new_grid_x] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+            self.valid_move = True
+        elif self.first_move and self.color == "black" and new_grid_y == original_grid_y + 2 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y - 1][new_grid_x] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+            self.valid_move = True
+        # pawn can only move diagonally when capturing an opponent's piece
+        elif abs(new_grid_x - original_grid_x) == 1 and ((self.color == "white" and new_grid_y == original_grid_y - 1) or (self.color == "black" and new_grid_y == original_grid_y + 1)) and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
+            self.valid_move = True
         else:
             self.return_to_original_position()
             return
 
-        # Only for Pawn figure, (if there is a figure in front of the pawn, it cannot move forward)
-        if self.color == 'black':
-            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_piece":
-                self.return_to_original_position()
-                return
-        elif self.color == 'white':
-            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_piece":
-                self.return_to_original_position()
-                return
-        
-
-        # if there is a enemy figure on oposite site of the pawn, it can move diagonally
+        if self.valid_move:
+            self.first_move = False
 
 
         super(Pawn, self).validate_move()
     
-
 class Rook(ChessPiece):
-    def __init__(self, image_path, x, y, color, board):
-        super(Rook, self).__init__(image_path, x, y, color, board)
+    def __init__(self, image_path, x, y, color, chessboard):
+        super(Rook, self).__init__(image_path, x, y, color, chessboard)
+        self.color = color
+        self.first_move = True
+        self.chessboard = chessboard
+    
+    def validate_move(self):
 
-    def mousePressEvent(self, event):
-        # Logic for showing possible moves for a rook can be added here
-        
-        #show posible moves of rook in 4 directions with if statemanet that rect wont be painted outside of chessboard
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
-        move_1 = 1
-        rect1 = QGraphicsRectItem(80 * self.x() / 80, 80 * (self.y() / 80 + move_1), 80, 80)
-        rect1.setBrush(QBrush(QColor(0, 255, 0, 127)))
-        self.scene().addItem(rect1)
-        
-        
-        self.setScale(self.default_scale * 1.1)
-        super(Rook, self).mousePressEvent(event)
 
-    def mouseReleaseEvent(self, event):
-        # You might add more complex move validation logic here later
-        self.setScale(self.default_scale)
-        super(Rook, self).mouseReleaseEvent(event)
+
+        # rook canot jump above the figures, so if there is a figure in the way of the rook, it cannot move further
+        if new_grid_x == original_grid_x:
+            if new_grid_y > original_grid_y:
+                for i in range(original_grid_y + 1, new_grid_y):
+                    if self.chessboard.current_board_state[i][new_grid_x] != "Empty":
+                        print("Invalid move 1")
+                        self.return_to_original_position()
+                        return
+            else:
+                for i in range(new_grid_y + 1, original_grid_y):
+                    if self.chessboard.current_board_state[i][new_grid_x] != "Empty":
+                        print("Invalid move 1")
+                        self.return_to_original_position()
+                        return
+        elif new_grid_y == original_grid_y:
+            if new_grid_x > original_grid_x:
+                for i in range(original_grid_x + 1, new_grid_x):
+                    if self.chessboard.current_board_state[new_grid_y][i] != "Empty":
+                        print("Invalid move 1")
+                        self.return_to_original_position()
+                        return
+            else:
+                for i in range(new_grid_x + 1, original_grid_x):
+                    if self.chessboard.current_board_state[new_grid_y][i] != "Empty":
+                        print("Invalid move 1")
+                        self.return_to_original_position()
+                        return
+
+        # rook cannot move on other than vertical or horizontal direction
+        if new_grid_x != original_grid_x and new_grid_y != original_grid_y:
+            print("Invalid move 1")
+            self.return_to_original_position()
+            return
+        else:
+            self.valid_move = True
+
+
+        # if there is a friendly figure in the way of the rook or enemy king, it cannot move on this position
+        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
+            print("Invalid move 2")
+            self.return_to_original_position()
+            return
+        else:
+            self.valid_move = True
+
+        super(Rook, self).validate_move()
+
+        # super(Rook, self).mouseReleaseEvent(event)
 
 class Knight(ChessPiece):
-    def mouseReleaseEvent(self, event):
-        # Knight logic: L-shaped moves
-        x_diff = abs(self.x() - event.lastPos().x())
-        y_diff = abs(self.y() - event.lastPos().y())
-        if not ((x_diff == 160 and y_diff == 80) or (x_diff == 80 and y_diff == 160)):
-            self.setPos(event.lastPos())
+    def validate_move(self):
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        original_grid_x, original_grid_y = self.getPreviousGridPosition()
+
+        # knight can move in L shape, so it can move to 8 different positions
+        if abs(new_grid_x - original_grid_x) == 2 and abs(new_grid_y - original_grid_y) == 1:
+            self.valid_move = True
+        elif abs(new_grid_x - original_grid_x) == 1 and abs(new_grid_y - original_grid_y) == 2:
+            self.valid_move = True
         else:
-            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
-        super(Knight, self).mouseReleaseEvent(event)
+            self.return_to_original_position()
+            return
+
+        # if there is a friendly figure in the way of the knight or enemy king, it cannot move on this position
+        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
+            self.return_to_original_position()
+            return
+        else:
+            self.valid_move = True
+
+        super(Knight, self).validate_move()
 
 class Bishop(ChessPiece):
-    def mouseReleaseEvent(self, event):
-        # Bishop logic: can move diagonally
-        if abs(self.x() - event.lastPos().x()) != abs(self.y() - event.lastPos().y()):
-            self.setPos(event.lastPos())
+    def validate_move(self):
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        original_grid_x, original_grid_y = self.getPreviousGridPosition()
+
+        # bishop can move diagonally, so the difference between the x and y coordinates should be the same
+        if abs(new_grid_x - original_grid_x) != abs(new_grid_y - original_grid_y):
+            self.return_to_original_position()
+            return
         else:
-            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
-        super(Bishop, self).mouseReleaseEvent(event)
+            # check if there is a piece in the way of the bishop
+            x_direction = 1 if new_grid_x > original_grid_x else -1
+            y_direction = 1 if new_grid_y > original_grid_y else -1
+            x, y = original_grid_x + x_direction, original_grid_y + y_direction
+            while x != new_grid_x and y != new_grid_y:
+                if self.chessboard.current_board_state[y][x] != "Empty":
+                    self.return_to_original_position()
+                    return
+                x += x_direction
+                y += y_direction
+
+        # if there is a friendly figure or enemy king on the destination square, the bishop cannot move to this position
+        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
+            self.return_to_original_position()
+            return
+        else:
+            self.valid_move = True
+
+        super(Bishop, self).validate_move()
 
 class Queen(ChessPiece):
-    def mouseReleaseEvent(self, event):
-        # Queen logic: combines rook and bishop
-        if self.x() != event.lastPos().x() and self.y() != event.lastPos().y() and \
-           abs(self.x() - event.lastPos().x()) != abs(self.y() - event.lastPos().y()):
-            self.setPos(event.lastPos())
+
+    def validate_move(self):
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        original_grid_x, original_grid_y = self.getPreviousGridPosition()
+
+        # queen can move horizontally, vertically, or diagonally
+        if new_grid_x != original_grid_x and new_grid_y != original_grid_y and abs(new_grid_x - original_grid_x) != abs(new_grid_y - original_grid_y):
+            self.return_to_original_position()
+            return
+
+        # check if there is a piece in the way of the queen
+        x_direction = 0 if new_grid_x == original_grid_x else 1 if new_grid_x > original_grid_x else -1
+        y_direction = 0 if new_grid_y == original_grid_y else 1 if new_grid_y > original_grid_y else -1
+        x, y = original_grid_x + x_direction, original_grid_y + y_direction
+        while x != new_grid_x or y != new_grid_y:
+            if self.chessboard.current_board_state[y][x] != "Empty":
+                self.return_to_original_position()
+                return
+            x += x_direction
+            y += y_direction
+
+        # if there is a friendly figure or enemy king on the destination square, the queen cannot move to this position
+        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
+            self.return_to_original_position()
+            return
         else:
-            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
-        super(Queen, self).mouseReleaseEvent(event)
+            self.valid_move = True 
+
+        super(Queen, self).validate_move()
 
 class King(ChessPiece):
-    def __init__(self, image_path, x, y, color, board):
-        super(King, self).__init__(image_path, x, y, color, board)
-        self.isKing = True
+    def validate_move(self):
+        
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
-    def mouseReleaseEvent(self, event):
-        # King logic: one square any direction
-        if abs(self.x() - event.lastPos().x()) > 80 or abs(self.y() - event.lastPos().y()) > 80:
-            self.setPos(event.lastPos())
+        # king can move one square in any direction
+        if abs(new_grid_x - original_grid_x) > 1 or abs(new_grid_y - original_grid_y) > 1:
+            self.return_to_original_position()
+            return
+
+        # if there is a friendly figure or enemy king on the destination square, the king cannot move to this position
+        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
+            self.return_to_original_position()
+            return
         else:
-            self.setPos(round(self.x() / 80) * 80, round(self.y() / 80) * 80)
-        super(King, self).mouseReleaseEvent(event)
+            self.valid_move = True
+        
+        super(King, self).validate_move()
 
 
 if __name__ == '__main__':
