@@ -47,6 +47,10 @@ class ChessBoard(QGraphicsView):
         self.scene.setSceneRect(0, 0, 640, 640)  # Zakładając, że rozmiar planszy to 640x640
         self.setFixedSize(900 + 2, 640 + 2)  # +2 dla marginesu; dostosuj według potrzeb
 
+    def oposite_color(self, color):
+        return 'white' if color == 'black' else 'black'
+    
+
     def can_castle(self, king, rook):
         # Check if the king and rook have not moved
         if king.has_moved or rook.has_moved:
@@ -67,7 +71,8 @@ class ChessBoard(QGraphicsView):
 
     def get_king(self, color):
         for piece in self.get_all_pieces(color):
-            if piece.isKing:
+            if piece.isKing == True and piece.color == color:
+                # print(f"King {piece.color} {piece.__class__.__name__} is in {piece.pos()}")
                 return piece
 
     def get_all_pieces(self, color):
@@ -75,36 +80,45 @@ class ChessBoard(QGraphicsView):
         for item in self.scene.items():
             if isinstance(item, ChessPiece) and item.color == color:
                 pieces.append(item)
+        
+        # print(f"Number of {color} pieces: {len(pieces)}")
         return pieces
     
-    def opposite_color(self, color):
-        return 'white' if color == 'black' else 'black'
-    
+
     def friendly_color(self, color):
         return 'black' if color == 'black' else 'white'
 
     def can_move(self, piece, position):
         # Check if the piece can move to the position
-        piece.setPos(position.x(), position.y())
+        piece.targetting = True
+        piece.target_Position_x = position.x()
+        piece.target_Position_y = position.y()
         piece.validate_move(self)
+        #print if the move is valid for figure
+        # print(f"figure {piece.color} {piece.__class__.__name__} has {piece.valid_move} move to {position.x(), position.y()}")
+        #print(f"figure {piece.color} {piece.__class__.__name__} is in {piece.pos()} and wants to move to {position.x(), position.y()}")
         if piece.valid_move:
+            print(f"figure {piece.color} {piece.__class__.__name__} can move to {position.x(), position.y()}")
+            piece.valid_move = False
+            piece.targetting = False
             return True
-
+        
+        piece.targetting = False
         return False
 
     def is_check(self, color):
         # Get the position of the king
-        king_position = self.get_king(self.opposite_color(color))
+        king_position = self.get_king(self.oposite_color(color))
+        # print oposite color
+        # print(f"Oposite color: {self.oposite_color(color)}")
 
-        # Print king position in terminal with grid coordinates
-        print(king_position.getStartingGridPosition())
-
-        # After move the code check all enemy pieces if they can move to the king position
-        for piece in self.get_all_pieces(self.opposite_color(color)):
+        # After move, code checks all friendly pieces if they can move to the enemy king position
+        for piece in self.get_all_pieces(color):
+            # print(f" {piece.pieceName}")
             if self.can_move(piece, king_position.pos()):
-                return True
+                print(f"Check by {piece.color} {piece.__class__.__name__}")
+                #return True
 
-        # The king is not in check
         return False
 
     # Method to switch turns
@@ -169,6 +183,7 @@ class ChessBoard(QGraphicsView):
         for i in range(8):
             self.addPiece(Pawn("pieces/white/wpawn.svg", i, 6, 'white', self))
 
+
     def addPiece(self, piece):
         self.scene.addItem(piece)
 
@@ -181,17 +196,15 @@ class ChessBoard(QGraphicsView):
 
         for i in range(8):
             for j in range(2):
-                if i == 0 and j == 4:
-                    self.current_board_state[j][i] = "black_king"
-                else:
-                    self.current_board_state[j][i] = "black_piece"
+                self.current_board_state[j][i] = "black_piece"
 
         for i in range(8):
             for j in range(6, 8):
-                if i == 7 and j == 4:
-                    self.current_board_state[j][i] = "white_king"
-                else:
-                    self.current_board_state[j][i] = "white_piece"
+                self.current_board_state[j][i] = "white_piece"
+                
+        self.current_board_state[7][4] = "white_king"     
+        self.current_board_state[0][4] = "black_king"
+
 
     def getBoardState(self):
         return self.current_board_state
@@ -234,6 +247,10 @@ class ChessPiece(QGraphicsSvgItem):
         self.oposite_color = 'white' if self.color == 'black' else 'black'
         self.original_grid_x = x
         self.original_grid_y = y
+        self.target_Position_x = 0
+        self.target_Position_y = 0
+        self.targetting = False # i know its so stupid but i dont know how to do it better
+        self.pieceName = self.__class__.__name__
 
     def mousePressEvent(self, event):
         super(ChessPiece, self).mousePressEvent(event)
@@ -244,55 +261,71 @@ class ChessPiece(QGraphicsSvgItem):
 
     def validate_move(self, chessboard):
 
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        #mechanic for checking if the piece is targetting the position of king
+        if self.targetting == False:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        elif self.targetting == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
 
         # Check bounds
         if not (0 <= new_grid_x <= 7 and 0 <= new_grid_y <= 7):
             self.valid_move = False
-
-        # checing condition if there is figure on the new position [exlcuding the case of pawn]
-        if self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
-
-            # cant move if there is friendly piece on the new position
-            if self.color == 'black':
-                if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_piece":
-                    self.valid_move = False
-                    return
-                else:
-                    self.valid_move = True
-            elif self.color == 'white':
-                if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_piece":
-                    self.valid_move = False
-                    return
-                else:
-                    self.valid_move = True
-
-            # cannot move if there is a king piece in the new position
-            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_king" or self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_king":
-                self.valid_move = False
-                return
-
-        # if the piece is not the color of the current turn, it cannot move
-        if self.color != self.chessboard.current_turn:
-            self.valid_move = False
             return
 
+        # # checing condition if there is figure on the new position [exlcuding the case of pawn]
+        # if self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
 
-    def move_piece(self):
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        #     # cant move if there is friendly piece on the new position
+        #     if self.color == 'black':
+        #         if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_piece", "black_king"]:
+        #             self.valid_move = False
+        #             return
+        #     elif self.color == 'white':
+        #         if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["white_piece", "white_king"]:
+        #             self.valid_move = False
+        #             return
 
-        self.validate_move(self.chessboard)
+        #     if self.targetting == False:
+        #         # cannot move if there is a king piece in the new position
+        #         if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_king" or self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_king":
+        #             self.valid_move = False
+        #             return
+        #     elif self.targetting == True:
+        #         if self.chessboard.current_board_state[new_grid_y][new_grid_x] == "black_king" or self.chessboard.current_board_state[new_grid_y][new_grid_x] == "white_king":
+        #             self.valid_move = True
 
-        # updating the board state and moving the piece if the move is valid
-        if self.valid_move == True:
-            self.cupture_piece()
-            self.setPos(new_x, new_y)
-            self.updateBoardStatus()
-            self.chessboard.switchTurnsAndAddOneToTurnTimer()
-            self.first_move = False
-        elif self.valid_move == False:
-            self.return_to_original_position()
+        if self.targetting == False:
+            # if the piece is not the color of the current turn, it cannot move
+            if self.color != self.chessboard.current_turn:
+                self.valid_move = False
+                return
+        elif self.targetting == True:
+            if self.color != self.chessboard.current_turn:
+                self.valid_move = True
+        
+        if self.targetting == False:
+            if self.valid_move:
+                self.first_move = False
 
+
+        # correct way 
+        if self.targetting == False:
+        # if there is a friendly figure on the destination square, the queen cannot move to this position
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] in [self.color + "_piece", self.color + "_king", self.oposite_color + "_king"]:
+                self.valid_move = False
+                return
+        elif self.targetting == True:
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_king":
+                self.valid_move = True
+
+
+
+        # print("tu patrze jaka figura ma targetting position")
+        # print(self.target_Position_x, self.target_Position_y)
+        self.valid_move = True
+
+    def get_current_position(self):
+        return self.x(), self.y()
 
     def cupture_piece(self):
         new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
@@ -304,20 +337,42 @@ class ChessPiece(QGraphicsSvgItem):
                 break
 
     def return_to_original_position(self):
-        print("Return to original position")
+        # print("Return to original position")
         self.setPos(self.original_grid_x * 80, self.original_grid_y * 80)
+
+    def move_piece(self):
+
+        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+
+        self.validate_move(self.chessboard)
+
+        if self.targetting == False:
+            # updating the board state and moving the piece if the move is valid
+            if self.valid_move == True:
+                self.cupture_piece()
+                self.setPos(new_x, new_y)
+                self.updateBoardStatus()
+                self.chessboard.switchTurnsAndAddOneToTurnTimer()
+                self.first_move = False
+                self.valid_move = False
+                # print(f"figure {self.color} {self.__class__.__name__} moved to {self.calculate_position()}")
+            elif self.valid_move == False:
+                self.return_to_original_position()
+
 
     def mouseReleaseEvent(self, event):
         super(ChessPiece, self).mouseReleaseEvent(event)
 
-        self.move_piece()
 
         self.setScale(self.default_scale)
-        
-        # Remove any existing move indicators from the scene
-        for item in self.scene().items():
-            if isinstance(item, QGraphicsRectItem) and item.brush().color() == QColor(0, 255, 0, 127):
-                self.scene().removeItem(item)
+
+        self.move_piece()
+
+        #self.printCurrentBoardStateInTerminal()
+
+        # check if there is a check
+        if self.chessboard.is_check(self.color):
+            print(f"Check by {self.color}")
 
     def updateBoardStatus(self):
 
@@ -375,35 +430,71 @@ class ChessPiece(QGraphicsSvgItem):
 
 class Pawn(ChessPiece):
     def __init__(self, image_path, x, y, color, chessboard):
-        super(Pawn, self).__init__(image_path, x, y, color, chessboard)  # Corrected parameter passing
+        super(Pawn, self).__init__(image_path, x, y, color, chessboard)
         self.color = color
         self.first_move = True
         self.chessboard = chessboard
 
     def validate_move(self, chessboard):
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
-        original_grid_x, original_grid_y = self.getPreviousGridPosition()
+        #mechanic for checking if the piece is targetting the position of king
+        if self.targetting == False:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        elif self.targetting == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
 
-        # pawn can move one square forward
-        if self.color == "white" and new_grid_y == original_grid_y - 1 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
-            self.valid_move = True
-        elif self.color == "black" and new_grid_y == original_grid_y + 1 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
-            self.valid_move = True
-        # pawn can move two squares forward on its first move
-        elif self.first_move and self.color == "white" and new_grid_y == original_grid_y - 2 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y + 1][new_grid_x] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
-            self.valid_move = True
-        elif self.first_move and self.color == "black" and new_grid_y == original_grid_y + 2 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y - 1][new_grid_x] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
-            self.valid_move = True
+        original_grid_x, original_grid_y = self.getPreviousGridPosition()
+        # if self.targetting == True:
+        #     print(original_grid_x, original_grid_y, new_grid_x, new_grid_y)
+
+        # if self.first_move == False:
+        #     # pawn can move one square forward
+        #     if self.color == "white" and new_grid_y == original_grid_y - 1 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+        #         self.valid_move = True
+        #     else:
+        #         self.valid_move = False
+        #         return
+        #     if self.color == "black" and new_grid_y == original_grid_y + 1 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+        #         self.valid_move = True
+        #     else:
+        #         self.valid_move = False
+        #         return
+        # elif self.first_move == True:
+        #     # pawn can move two squares forward on its first move
+        #     if self.first_move and self.color == "white" and new_grid_y == original_grid_y - 2 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y + 1][new_grid_x] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+        #         self.valid_move = True
+        #     else:
+        #         self.valid_move = False
+        #         return
+        #     if self.first_move and self.color == "black" and new_grid_y == original_grid_y + 2 and new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y - 1][new_grid_x] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x] == "Empty":
+        #         self.valid_move = True
+        #     else:
+        #         self.valid_move = False
+        #         return
+
+        # pawn movement mechanic
+        if self.first_move == True:
+            if abs(new_grid_y - original_grid_y) > 2:
+                self.valid_move = False
+                return
+        elif self.first_move == False:
+            if abs(new_grid_y - original_grid_y) > 1:
+                self.valid_move = False
+                return
+        
         # pawn can only move diagonally when capturing an opponent's piece
-        elif abs(new_grid_x - original_grid_x) == 1 and ((self.color == "white" and new_grid_y == original_grid_y - 1) or (self.color == "black" and new_grid_y == original_grid_y + 1)) and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
-            self.valid_move = True
-        # else:
+        if abs(new_grid_x - original_grid_x) == 1 and abs(new_grid_y - original_grid_y) == 1:
+            if self.targetting == False:
+                if self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_piece":
+                    self.valid_move = True
+            elif self.targetting == True:
+                if self.chessboard.current_board_state[new_grid_y][new_grid_x] in [self.oposite_color + "_piece", self.oposite_color + "_king"]:
+                    self.valid_move = True
+
+
+        # # If pawn moves more than 2 squares, it is not a valid move
+        # if abs(new_grid_y - original_grid_y) > 2:
         #     self.valid_move = False
         #     return
-
-        if self.valid_move:
-            self.first_move = False
-
 
         super(Pawn, self).validate_move(chessboard)
     
@@ -413,11 +504,16 @@ class Rook(ChessPiece):
         self.color = color
         self.first_move = True
         self.chessboard = chessboard
-        self.has_moved = False
+
     
     def validate_move(self, chessboard):
 
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        #mechanic for checking if the piece is targetting the position of king
+        if self.targetting == False:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        elif self.targetting == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
+
         original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
 
@@ -454,21 +550,23 @@ class Rook(ChessPiece):
             self.valid_move = True
 
 
-        # if there is a friendly figure in the way of the rook or enemy king, it cannot move on this position
-        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
-            self.valid_move = False
-            return
-        else:
-            self.valid_move = True
-
         super(Rook, self).validate_move(chessboard)
 
-        # super(Rook, self).mouseReleaseEvent(event)
 
 class Knight(ChessPiece):
+    def __init__(self, image_path, x, y, color, chessboard):
+        super(Knight, self).__init__(image_path, x, y, color, chessboard)
+        self.color = color
+        self.first_move = True
+        self.chessboard = chessboard
 
     def validate_move(self, chessboard):
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        #mechanic for checking if the piece is targetting the position of king
+        if self.targetting == False:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        elif self.targetting == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
+
         original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
         # knight can move in L shape, so it can move to 8 different positions
@@ -480,18 +578,23 @@ class Knight(ChessPiece):
             self.valid_move = False
             return
 
-        # if there is a friendly figure in the way of the knight or enemy king, it cannot move on this position
-        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
-            self.valid_move = False
-            return
-        else:
-            self.valid_move = True
 
         super(Knight, self).validate_move(chessboard)
 
 class Bishop(ChessPiece):
+    def __init__(self, image_path, x, y, color, chessboard):
+        super(Bishop, self).__init__(image_path, x, y, color, chessboard)
+        self.color = color
+        self.first_move = True
+        self.chessboard = chessboard
+
     def validate_move(self, chessboard):
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        #mechanic for checking if the piece is targetting the position of king
+        if self.targetting == False:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        elif self.targetting == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
+
         original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
         # bishop can move diagonally, so the difference between the x and y coordinates should be the same
@@ -510,19 +613,32 @@ class Bishop(ChessPiece):
                 x += x_direction
                 y += y_direction
 
-        # if there is a friendly figure or enemy king on the destination square, the bishop cannot move to this position
-        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
-            self.valid_move = False
-            return
-        else:
-            self.valid_move = True
+        if self.targetting == False:
+        # if there is a friendly figure on the destination square, the queen cannot move to this position
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] in [self.color + "_piece", self.color + "_king"]:
+                self.valid_move = False
+                return
+        elif self.targetting == True:
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_king":
+                self.valid_move = True
 
         super(Bishop, self).validate_move(chessboard)
 
 class Queen(ChessPiece):
+    def __init__(self, image_path, x, y, color, chessboard):
+        super(Queen, self).__init__(image_path, x, y, color, chessboard)
+        self.color = color
+        self.first_move = True
+        self.chessboard = chessboard
+
 
     def validate_move(self, chessboard):
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        #mechanic for checking if the piece is targetting the position of king
+        if self.targetting == False:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        elif self.targetting == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
+
         original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
         # queen can move horizontally, vertically, or diagonally
@@ -541,12 +657,14 @@ class Queen(ChessPiece):
             x += x_direction
             y += y_direction
 
-        # if there is a friendly figure or enemy king on the destination square, the queen cannot move to this position
-        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
-            self.valid_move = False
-            return
-        else:
-            self.valid_move = True 
+        if self.targetting == False:
+        # if there is a friendly figure on the destination square, the queen cannot move to this position
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] in [self.color + "_piece", self.color + "_king"]:
+                self.valid_move = False
+                return
+        elif self.targetting == True:
+            if self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_king":
+                self.valid_move = True
 
         super(Queen, self).validate_move(chessboard)
 
@@ -557,11 +675,15 @@ class King(ChessPiece):
         self.first_move = True
         self.chessboard = chessboard
         self.isKing = True
-        self.has_moved = False
 
     def validate_move(self, chessboard):
         
-        new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        #mechanic for checking if the piece is targetting the position of king
+        if self.targetting == False:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
+        elif self.targetting == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
+
         original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
         # king can move one square in any direction
@@ -569,12 +691,6 @@ class King(ChessPiece):
             self.valid_move = False
             return
 
-        # if there is a friendly figure or enemy king on the destination square, the king cannot move to this position
-        if self.chessboard.current_board_state[new_grid_y][new_grid_x] in ["black_king", "white_king", self.color + "_piece"]:
-            self.valid_move = False
-            return
-        else:
-            self.valid_move = True
 
         super(King, self).validate_move(chessboard)
 
