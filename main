@@ -1,32 +1,38 @@
 # TO DO
 # Roszada
 # zbieranie ruchów
-# Zegar
+# Zegar Prawie jest teraz tylko do warunku wygranej i końca gry
 # Warunek wygranej NO w miare git ale dalej do poprienia
 # poruszanie figur notacją szachową
 
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit
 from PyQt5.QtSvg import QGraphicsSvgItem
-from PyQt5.QtGui import QBrush, QColor
-from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtGui import QBrush, QColor, QFont
+from PyQt5.QtCore import Qt, QPointF, QThread
 
 import threading
 import time   
 
-class ClockThread(threading.Thread):
-    def __init__(self, chessboard, TimeAmount):
-        threading.Thread.__init__(self)
+class ClockThread(QThread):
+    def __init__(self, mainWindow, timeAmount, chessboard, parent=None):
+        super().__init__(parent)
+        self.timeAmount = timeAmount
         self.chessboard = chessboard
-        self.TimeAmount = TimeAmount
+        self.mainWindow = mainWindow
+        self.TimeAmount = 0
 
-    def run(self, TimeAmount):
+    def run(self):
         while True:
             time.sleep(1)
             self.TimeAmount -= 1
+            self.mainWindow.updateLabel(f"{self.TimeAmount // 60}:{self.TimeAmount % 60}")
             if self.TimeAmount == 0:
-                self.chessboard.switchTurnsAndAddOneToTurnTimer()
-                self.TimeAmount = 60
+                print("Time is up")
+    
+    def set(self, timeAmount):
+        self.TimeAmount = timeAmount
+
 
 class ChessBoard(QGraphicsView):
     def __init__(self, *args, **kwargs):
@@ -43,6 +49,7 @@ class ChessBoard(QGraphicsView):
         self.setStartingboardState()
         self.isCheck = False
         self.witchKingisCheck = None
+        self.gameStarted = False
 
 
         # Opcjonalnie, możesz tutaj ustawić rozmiar widoku, aby pasował do rozmiaru sceny
@@ -52,7 +59,6 @@ class ChessBoard(QGraphicsView):
     def oposite_color(self, color):
         return 'white' if color == 'black' else 'black'
     
-
     def can_castle(self, king, rook):
         # Check if the king and rook have not moved
         if king.has_moved or rook.has_moved:
@@ -86,7 +92,6 @@ class ChessBoard(QGraphicsView):
         # print(f"Number of {color} pieces: {len(pieces)}")
         return pieces
     
-
     def friendly_color(self, color):
         return 'black' if color == 'black' else 'white'
 
@@ -138,8 +143,6 @@ class ChessBoard(QGraphicsView):
         # # Check if there is a check
         # if self.is_check(self.current_turn):
         #     print(f"Check by {self.current_turn}")
-
-
 
     def is_checkmate(self, color):
         # Check if the king is in check
@@ -196,7 +199,6 @@ class ChessBoard(QGraphicsView):
         for i in range(8):
             self.addPiece(Pawn("pieces/white/wpawn.svg", i, 6, 'white', self))
 
-
     def addPiece(self, piece):
         self.scene.addItem(piece)
 
@@ -218,32 +220,115 @@ class ChessBoard(QGraphicsView):
         self.current_board_state[7][4] = "white_king"     
         self.current_board_state[0][4] = "black_king"
 
-
     def getBoardState(self):
         return self.current_board_state
+    
+    def returnFigurePositionToChessCordinates(self, piece):
+
+        x = piece.x()
+        y = piece.y()
+
+        # Table for converting the position of the figure to chess coordinates
+        if x / 80 == 0:
+            xChessCordinate = 'a'
+        elif x / 80 == 1:
+            xChessCordinate = 'b'
+        elif x / 80 == 2:
+            xChessCordinate = 'c'
+        elif x / 80 == 3:
+            xChessCordinate = 'd'
+        elif x / 80 == 4:
+            xChessCordinate = 'e'
+        elif x / 80 == 5:
+            xChessCordinate = 'f'
+        elif x / 80 == 6:
+            xChessCordinate = 'g'
+        elif x / 80 == 7:
+            xChessCordinate = 'h'
+
+        yChessCordinate = 8 - y / 80
+
+        # Sum the coordinates of the figure and pieceName
+        figurePositionInChessCordinates = str(piece.NamePiece) + xChessCordinate + str(yChessCordinate)
+
+        return figurePositionInChessCordinates
+
 
 class MainWindow(QWidget):
-    def __init__(self):
+    def __init__(self, chessboard):
         super().__init__()
         self.setWindowTitle('Przykład aplikacji')
         self.setFixedSize(900, 640)  # Ustawia pozycję i rozmiar głównego okna
+        self.chessBoard = chessboard
+        self.Clock = ClockThread(self, 0, chessboard)
 
         # Tworzy i umieszcza szachownicę
         self.chessBoard = ChessBoard(self)
         self.chessBoard.setGeometry(0, 0, 640, 640)  # Ustawia pozycję i rozmiar szachownicy
 
         # Tworzy i umieszcza przyciski
-        self.createButton(800, 20, 'Przycisk 1')
-        self.createButton(800, 50, 'Przycisk 2')
+        self.createButtonSTART(700, 20, 'START')
+        self.createButton2(700, 50, 'Przycisk 2')
 
-    def createButton(self, x, y, text):
+        # Tworzy i umieszcza przyciski dla czasu
+        self.createButtonTime1(700, 120, 'Czas 10 min')
+        self.createButtonTime2(700, 150, 'Czas 1 min')
+
+        # Tworzy i umieszcza etykietę
+        self.label = QLabel(self)
+        self.label.setText("00:00")
+        self.label.move(700, 80)  # Ustawia pozycję etykiety
+        font = QFont("Arial", 20)  # Ustawia czcionkę na Arial i rozmiar na 20
+        self.label.setFont(font)
+
+        # Tworzy i umieszcza pole do wpisywania tekstu
+        self.text_field = QLineEdit(self)
+        self.text_field.move(800, 120)  # Ustawia pozycję pola do wpisywania tekstu
+
+    def updateLabel(self, text):
+        self.label.setText(text)
+
+    def createButtonSTART(self, x, y, text):
         button = QPushButton(text, self)
         button.move(x, y)
-        button.clicked.connect(self.onButtonClick)
+        button.clicked.connect(self.onButtonClickSTART)
+    def createButton2(self, x, y, text):
+        button = QPushButton(text, self)
+        button.move(x, y)
+        button.clicked.connect(self.onButtonClick2)
 
-    def onButtonClick(self):
-        print("Kliknięto przycisk")
+    # Buttons for time
+    def createButtonTime1(self, x, y, text):
+        button = QPushButton(text, self)
+        button.move(x, y)
+        button.clicked.connect(self.onTimeButtonClick1)
+    def createButtonTime2(self, x, y, text):
+        button = QPushButton(text, self)
+        button.move(x, y)
+        button.clicked.connect(self.onTimeButtonClick2)
     
+    # Logic in buttons for time
+    def onTimeButtonClick1(self):
+        self.Clock.set(600)
+        self.updateLabel("10:00")
+    def onTimeButtonClick2(self):
+        self.Clock.set(60)
+        self.updateLabel("01:00")
+
+    def createWindowContainer(self, x, y, width, height, text):
+        self.windowContainer = QWidget(self)
+        self.windowContainer.setGeometry(x, y, width, height)
+        self.windowContainer.setWindowTitle(text)
+
+    def onButtonClickSTART(self):
+        self.chessBoard.gameStarted = True
+        self.Clock.start()
+        print("Game has started")
+
+    def onButtonClick2(self):
+        print("Kliknięto przycisk")
+
+
 class ChessPiece(QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
         super(ChessPiece, self).__init__(image_path)
@@ -376,16 +461,19 @@ class ChessPiece(QGraphicsSvgItem):
     def mouseReleaseEvent(self, event):
         super(ChessPiece, self).mouseReleaseEvent(event)
 
+        if self.chessboard.gameStarted == True:
+            self.setScale(self.default_scale)
 
-        self.setScale(self.default_scale)
+            self.move_piece()
 
-        self.move_piece()
-
-        # Check if there is a check
-        if self.chessboard.is_check(self.color):
-            print(f"Check by {self.color}")
-        if self.chessboard.is_checkmate(self.oposite_color):
-            print(f"Check by {self.oposite_color}")
+            # Check if there is a check
+            if self.chessboard.is_check(self.color):
+                print(f"Check by {self.color}")
+            if self.chessboard.is_checkmate(self.oposite_color):
+                print(f"Check by {self.oposite_color}")
+        elif self.chessboard.gameStarted == False:
+            print("Game has not started yet")
+            self.return_to_original_position()
 
         #self.printCurrentBoardStateInTerminal()
 
@@ -446,6 +534,7 @@ class ChessPiece(QGraphicsSvgItem):
 
     def getPreviousGridPosition(self):
         return self.original_grid_x, self.original_grid_y   
+
 
 class Pawn(ChessPiece):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -587,7 +676,6 @@ class Rook(ChessPiece):
 
 
         super(Rook, self).validate_move(chessboard)
-
 
 class Knight(ChessPiece):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -733,6 +821,7 @@ class King(ChessPiece):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    window = MainWindow()
+    chessboard = ChessBoard()
+    window = MainWindow(chessboard)
     window.show()
     sys.exit(app.exec_())
