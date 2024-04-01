@@ -2,7 +2,7 @@
 # Roszada
 # zbieranie ruchów
 # Zegar
-# Warunek wygranej
+# Warunek wygranej NO w miare git ale dalej do poprienia
 # poruszanie figur notacją szachową
 
 import sys
@@ -41,6 +41,8 @@ class ChessBoard(QGraphicsView):
         self.current_board_state = [[0 for _ in range(8)] for _ in range(8)]
         self.turnTimer = 0
         self.setStartingboardState()
+        self.isCheck = False
+        self.witchKingisCheck = None
 
 
         # Opcjonalnie, możesz tutaj ustawić rozmiar widoku, aby pasował do rozmiaru sceny
@@ -98,7 +100,7 @@ class ChessBoard(QGraphicsView):
         # print(f"figure {piece.color} {piece.__class__.__name__} has {piece.valid_move} move to {position.x(), position.y()}")
         #print(f"figure {piece.color} {piece.__class__.__name__} is in {piece.pos()} and wants to move to {position.x(), position.y()}")
         if piece.valid_move:
-            print(f"figure {piece.color} {piece.__class__.__name__} can move to {position.x(), position.y()}")
+            # print(f"figure {piece.color} {piece.__class__.__name__} can move to {position.x(), position.y()}")
             piece.valid_move = False
             piece.targetting = False
             return True
@@ -117,7 +119,11 @@ class ChessBoard(QGraphicsView):
             # print(f" {piece.pieceName}")
             if self.can_move(piece, king_position.pos()):
                 print(f"Check by {piece.color} {piece.__class__.__name__}")
-                #return True
+                print (f"King {king_position.color} {king_position.__class__.__name__} is in {king_position.pos()}")
+                print(f"figure position is {piece.pos()}")
+                # print king position that is in check
+                #print(f"King {king_position.color} {king_position.__class__.__name__} is in {king_position.pos()}")   
+                return True
 
         return False
 
@@ -125,8 +131,15 @@ class ChessBoard(QGraphicsView):
     def switchTurnsAndAddOneToTurnTimer(self):
         self.current_turn = 'black' if self.current_turn == 'white' else 'white'
 
+        #print(f"Turn: {self.current_turn}")
         # Add one to the turn timer
         self.turnTimer += 1
+
+        # # Check if there is a check
+        # if self.is_check(self.current_turn):
+        #     print(f"Check by {self.current_turn}")
+
+
 
     def is_checkmate(self, color):
         # Check if the king is in check
@@ -368,11 +381,17 @@ class ChessPiece(QGraphicsSvgItem):
 
         self.move_piece()
 
-        #self.printCurrentBoardStateInTerminal()
-
-        # check if there is a check
+        # Check if there is a check
         if self.chessboard.is_check(self.color):
             print(f"Check by {self.color}")
+        if self.chessboard.is_checkmate(self.oposite_color):
+            print(f"Check by {self.oposite_color}")
+
+        #self.printCurrentBoardStateInTerminal()
+
+        # # check if there is a check
+        # if self.chessboard.is_check(self.color):
+        #     print(f"Check by {self.color}")
 
     def updateBoardStatus(self):
 
@@ -473,23 +492,40 @@ class Pawn(ChessPiece):
 
         # pawn movement mechanic
         if self.first_move == True:
-            if abs(new_grid_y - original_grid_y) > 2:
+            if abs(new_grid_y - original_grid_y) > 2 and abs(new_grid_y - original_grid_y) > 2:
                 self.valid_move = False
                 return
         elif self.first_move == False:
-            if abs(new_grid_y - original_grid_y) > 1:
+            if abs(new_grid_y - original_grid_y) > 1 and abs(new_grid_y - original_grid_y) > 1:
                 self.valid_move = False
                 return
         
         # pawn can only move diagonally when capturing an opponent's piece
-        if abs(new_grid_x - original_grid_x) == 1 and abs(new_grid_y - original_grid_y) == 1:
-            if self.targetting == False:
-                if self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_piece":
-                    self.valid_move = True
-            elif self.targetting == True:
-                if self.chessboard.current_board_state[new_grid_y][new_grid_x] in [self.oposite_color + "_piece", self.oposite_color + "_king"]:
-                    self.valid_move = True
+        # if abs(new_grid_x - original_grid_x) == 1 and abs(new_grid_y - original_grid_y) == 1:
+        #     if self.targetting == False:
+        #         if self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_piece":
+        #             self.valid_move = True
+        #     elif self.targetting == True:
+        #         if self.chessboard.current_board_state[new_grid_y][new_grid_x] in [self.oposite_color + "_piece", self.oposite_color + "_king"]:
+        #             self.valid_move = True
+        
+        # pawn can only move diagonally when capturing an opponent's piece
+        if self.targetting == False:
+            if self.color == "white" and new_grid_y == original_grid_y - 1 and (new_grid_x == original_grid_x + 1 or new_grid_x == original_grid_x - 1) and self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_piece":
+                self.valid_move = True
+            elif self.color == "black" and new_grid_y == original_grid_y + 1 and (new_grid_x == original_grid_x + 1 or new_grid_x == original_grid_x - 1) and self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_piece":
+                self.valid_move = True
+        elif self.targetting == True:
+            if self.color == "white" and new_grid_y == original_grid_y - 1 and (new_grid_x == original_grid_x + 1 or new_grid_x == original_grid_x - 1) and self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_king":
+                self.valid_move = True
+            elif self.color == "black" and new_grid_y == original_grid_y + 1 and (new_grid_x == original_grid_x + 1 or new_grid_x == original_grid_x - 1) and self.chessboard.current_board_state[new_grid_y][new_grid_x] == self.oposite_color + "_king":
+                self.valid_move = True
 
+
+        # pawn cant move forward if there is a figure in front of it
+        if new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
+            self.valid_move = False
+            return
 
         # # If pawn moves more than 2 squares, it is not a valid move
         # if abs(new_grid_y - original_grid_y) > 2:
