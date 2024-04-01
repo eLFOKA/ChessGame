@@ -1,12 +1,12 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem
+from PyQt5.QtWidgets import QApplication, QWidget, QGraphicsView, QPushButton, QVBoxLayout , QGraphicsScene, QGraphicsRectItem, QGraphicsItem
 from PyQt5.QtSvg import QGraphicsSvgItem
 from PyQt5.QtGui import QBrush, QColor, QTransform
 from PyQt5.QtCore import Qt, QPointF
 
 class ChessBoard(QGraphicsView):
-    def __init__(self):
-        super(ChessBoard, self).__init__()
+    def __init__(self, parent=None):
+        super(ChessBoard, self).__init__(parent)
         self.scene = QGraphicsScene(self)
         self.setScene(self.scene)
         self.setSceneRect(0, 0, 640, 640)
@@ -16,6 +16,9 @@ class ChessBoard(QGraphicsView):
         self.current_board_state = [[0 for _ in range(8)] for _ in range(8)]
         self.turnTimer = 0
         self.setStartingboardState()
+        self.setFixedSize(8 * 80, 8 * 80)  
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  
 
     # Method to switch turns
     def switchTurns(self):
@@ -83,7 +86,28 @@ class ChessBoard(QGraphicsView):
     def getBoardState(self):
         return self.current_board_state
 
-    
+class MainWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('Przykład aplikacji')
+        self.setFixedSize(900, 640)  # Ustawia pozycję i rozmiar głównego okna
+
+        # Tworzy i umieszcza szachownicę
+        self.chessBoard = ChessBoard(self)
+        self.chessBoard.setGeometry(0, 0, 640, 640)  # Ustawia pozycję i rozmiar szachownicy
+
+        # Tworzy i umieszcza przyciski
+        self.createButton(800, 20, 'Przycisk 1')
+        self.createButton(800, 50, 'Przycisk 2')
+
+    def createButton(self, x, y, text):
+        button = QPushButton(text, self)
+        button.move(x, y)
+        button.clicked.connect(self.onButtonClick)
+
+    def onButtonClick(self):
+        print("Kliknięto przycisk")
+
 
 class ChessPiece(QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -225,8 +249,6 @@ class ChessPiece(QGraphicsSvgItem):
 
     def getPreviousGridPosition(self):
         return self.original_grid_x, self.original_grid_y   
-
-
 
 class Pawn(ChessPiece, QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -432,6 +454,6 @@ class King(ChessPiece):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    board = ChessBoard()
-    board.show()
+    window = MainWindow()
+    window.show()
     sys.exit(app.exec_())
