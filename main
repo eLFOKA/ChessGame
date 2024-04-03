@@ -1,5 +1,5 @@
 # TO DO
-# Roszada
+# Roszada - ----------------------------------------------------- Done! Do poprawki lekkiej potem # TO DO LIST
 # zbieranie ruchów - JEST! tylko okienko dorobić ---------------- DOONEE!!!!
 # Zegar - Prawie jest teraz tylko do warunku wygranej i końca gry
 # Warunek wygranej -  NO w miare git ale dalej do poprienia
@@ -54,8 +54,8 @@ class ChessBoard(QGraphicsView):
         self.isCheck = False
         self.witchKingisCheck = None
         self.gameStarted = False
-        self.x_grid_position_for_enter_move = None # Stupid ass fuck but lets try it
-        self.y_grid_position_for_enter_move = None
+        # self.x_grid_position_for_enter_move = None # Stupid ass fuck but lets try it
+        # self.y_grid_position_for_enter_move = None
         self.last_moved_piece = None
 
 
@@ -76,8 +76,8 @@ class ChessBoard(QGraphicsView):
             if self.current_board_state[king.original_grid_y][king.original_grid_x + i] != "Empty":
                 return False
 
-        # Mechanic that Check if the king is in check
-        
+        # Mechanic that check if king is in check
+
 
         # Check if the squares the king crosses are attacked
 
@@ -138,6 +138,36 @@ class ChessBoard(QGraphicsView):
                 return True
 
         return False
+
+    # need to be tested
+    def perform_castling(self, king, rook):
+        if not self.can_castle(king, rook):
+            return False
+        
+        # Określ pozycje docelowe dla króla i wieży na podstawie ich obecnej pozycji
+        if rook.original_grid_x == 0:  # Roszada długa
+            king_target_x = 2
+            rook_target_x = 3
+        else:  # Roszada krótka
+            king_target_x = 6
+            rook_target_x = 5
+        
+        # Ustaw pozycje króla i wieży
+        king.setPos(king_target_x * 80, king.original_grid_y * 80)
+        rook.setPos(rook_target_x * 80, rook.original_grid_y * 80)
+        
+        # Uaktualnij stan planszy
+        self.current_board_state[king.original_grid_y][king.original_grid_x] = "Empty"
+        self.current_board_state[rook.original_grid_y][rook.original_grid_x] = "Empty"
+        self.current_board_state[king.original_grid_y][king_target_x] = king.color + "_king"
+        self.current_board_state[rook.original_grid_y][rook_target_x] = rook.color + "_piece"
+        
+        # Oznacz króla i wieżę jako poruszone
+        king.has_moved = True
+        rook.has_moved = True
+        
+        return True
+
 
     # Method to switch turns
     def switchTurnsAndAddOneToTurnTimer(self):
@@ -446,35 +476,35 @@ class MainWindow(QWidget):
     def onButtonClick2(self):
         print("Kliknięto przycisk")
 
-    # for moving pieces with keyboard
-    def keyPressEvent(self, event):
+    # # for moving pieces with keyboard
+    # def keyPressEvent(self, event):
 
-        if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
-            self.handleEnterKeyPress()
+    #     if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
+    #         self.handleEnterKeyPress()
 
-    def handleEnterKeyPress(self):
-        try:
-            chessCordinates = self.readTextField()
-            if self.chessBoard.gameStarted == True:
-                x, y, figureName = self.chessBoard.returnChessCordinatesToFigurePosition(chessCordinates)
-                self.chessBoard.x_grid_position_for_enter_move = x
-                self.chessBoard.y_grid_position_for_enter_move = y
-                pieces = self.chessBoard.get_all_pieces(self.chessBoard.current_turn)
+    # def handleEnterKeyPress(self):
+    #     try:
+    #         chessCordinates = self.readTextField()
+    #         if self.chessBoard.gameStarted == True:
+    #             x, y, figureName = self.chessBoard.returnChessCordinatesToFigurePosition(chessCordinates)
+    #             self.chessBoard.x_grid_position_for_enter_move = x
+    #             self.chessBoard.y_grid_position_for_enter_move = y
+    #             pieces = self.chessBoard.get_all_pieces(self.chessBoard.current_turn)
 
-                for piece in pieces:
-                    if piece.__class__.__name__ == figureName:
-                        piece.enterPressedMove = True
-                        piece.validate_move(self.chessBoard)
-                        print(piece.valid_move)
-                        if piece.valid_move:
-                            print(f"jestem w handleEnterKeyPress i ruch jest poprawny")
-                            piece.move_piece()
-                            print(piece.valid_move)
-                            piece.enterPressedMove = False
-                            return
-                        piece.enterPressedMove = False
-        except Exception as e:
-            print(f"Wystąpił wyjątek: {e}")
+    #             for piece in pieces:
+    #                 if piece.__class__.__name__ == figureName:
+    #                     piece.enterPressedMove = True
+    #                     piece.validate_move(self.chessBoard)
+    #                     print(piece.valid_move)
+    #                     if piece.valid_move:
+    #                         print(f"jestem w handleEnterKeyPress i ruch jest poprawny")
+    #                         piece.move_piece()
+    #                         print(piece.valid_move)
+    #                         piece.enterPressedMove = False
+    #                         return
+    #                     piece.enterPressedMove = False
+    #     except Exception as e:
+    #         print(f"Wystąpił wyjątek: {e}")
 
 class ChessPiece(QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -496,7 +526,8 @@ class ChessPiece(QGraphicsSvgItem):
         self.target_Position_y = 0
         self.targetting = False # i know its so stupid but i dont know how to do it better
         self.pieceName = self.__class__.__name__
-        self.enterPressedMove = False
+        # self.enterPressedMove = False
+        self.hasmoved = False
 
     def mousePressEvent(self, event):
         super(ChessPiece, self).mousePressEvent(event)
@@ -554,6 +585,11 @@ class ChessPiece(QGraphicsSvgItem):
                 self.first_move = False
 
 
+        # check if color of the piece is the same as the color of the piece on the target position
+        if self.color != self.chessboard.current_turn:
+            self.valid_move = False
+            return
+
         # correct way 
         if self.targetting == False:
         # if there is a friendly figure on the destination square, the queen cannot move to this position
@@ -565,7 +601,7 @@ class ChessPiece(QGraphicsSvgItem):
                 self.valid_move = True
 
 
-        print(f"is valid move after {self.valid_move}")
+        # print(f"is valid move after {self.valid_move}")
 
         # print("tu patrze jaka figura ma targetting position")
         # print(self.target_Position_x, self.target_Position_y)
@@ -671,25 +707,25 @@ class ChessPiece(QGraphicsSvgItem):
 
     def calculate_position(self):
 
-        if self.enterPressedMove == False:
-            new_x = round(self.pos().x() / 80) * 80
-            new_y = round(self.pos().y() / 80) * 80
+        # if self.enterPressedMove == False:
+        new_x = round(self.pos().x() / 80) * 80
+        new_y = round(self.pos().y() / 80) * 80
 
-            new_grid_x = int(new_x / 80)
-            new_grid_y = int(new_y / 80)
+        new_grid_x = int(new_x / 80)
+        new_grid_y = int(new_y / 80)
 
-            print(f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = False")
-            return new_x, new_y, new_grid_x, new_grid_y
-        elif self.enterPressedMove == True:
+        print(f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = False")
+        return new_x, new_y, new_grid_x, new_grid_y
+        # elif self.enterPressedMove == True:
 
-            new_grid_x = self.chessboard.x_grid_position_for_enter_move
-            new_grid_y = self.chessboard.y_grid_position_for_enter_move
+        #     new_grid_x = self.chessboard.x_grid_position_for_enter_move
+        #     new_grid_y = self.chessboard.y_grid_position_for_enter_move
 
-            new_x = new_grid_x * 80
-            new_y = new_grid_y * 80
+        #     new_x = new_grid_x * 80
+        #     new_y = new_grid_y * 80
 
-            print(f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = True")
-            return new_x, new_y, new_grid_x, new_grid_y
+        #     print(f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = True")
+        #     return new_x, new_y, new_grid_x, new_grid_y
     
     def getStartingGridPosition(self):
         return self.original_grid_x, self.original_grid_y
@@ -721,8 +757,8 @@ class Pawn(ChessPiece):
 
         original_grid_x, original_grid_y = self.getPreviousGridPosition()
 
-        print(f"original grid x: {original_grid_x}, original grid y: {original_grid_y}")
-        print(f"new grid x: {new_grid_x}, new grid y: {new_grid_y}")
+        # print(f"original grid x: {original_grid_x}, original grid y: {original_grid_y}")
+        # print(f"new grid x: {new_grid_x}, new grid y: {new_grid_y}")
 
         # if self.targetting == True:
         #     print(original_grid_x, original_grid_y, new_grid_x, new_grid_y)
@@ -751,18 +787,18 @@ class Pawn(ChessPiece):
         #     else:
         #         self.valid_move = False
         #         return
-        print(f"is valid move before {self.first_move}")
+        # print(f"is valid move before {self.first_move}")
         # pawn movement mechanic
         if self.first_move == True:
             if new_grid_x != original_grid_x or abs(new_grid_y - original_grid_y) > 2:
-                print(new_grid_x == original_grid_x)
-                print(abs(new_grid_y - original_grid_y) > 2)
+                # print(new_grid_x == original_grid_x)
+                # print(abs(new_grid_y - original_grid_y) > 2)
                 self.valid_move = False
                 return
             else:
                 self.valid_move = True
         elif self.first_move == False:
-            if abs(new_grid_x - original_grid_x) == 1 and abs(new_grid_y - original_grid_y) == 1:
+            if abs(new_grid_x - original_grid_x) <= 1 and abs(new_grid_y - original_grid_y) == 1:
                 self.valid_move = True
             else:
                 self.valid_move = False
@@ -790,10 +826,15 @@ class Pawn(ChessPiece):
                 self.valid_move = True
 
 
+        # # pawn cant move forward if there is a figure in front of it
+        # if new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
+        #     self.valid_move = False
+        #     return
         # pawn cant move forward if there is a figure in front of it
-        if new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
+        if new_grid_y == original_grid_y and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
             self.valid_move = False
             return
+
 
         # If pawn moves more than 2 squares, it is not a valid move
         if abs(new_grid_y - original_grid_y) > 2:
@@ -904,17 +945,21 @@ class Bishop(ChessPiece):
         if abs(new_grid_x - original_grid_x) != abs(new_grid_y - original_grid_y):
             self.valid_move = False
             return
-        else:
-            # check if there is a piece in the way of the bishop
-            x_direction = 1 if new_grid_x > original_grid_x else -1
-            y_direction = 1 if new_grid_y > original_grid_y else -1
-            x, y = original_grid_x + x_direction, original_grid_y + y_direction
-            while x != new_grid_x and y != new_grid_y:
-                if self.chessboard.current_board_state[y][x] != "Empty":
-                    self.valid_move = False
-                    return
-                x += x_direction
-                y += y_direction
+        elif abs(new_grid_x - original_grid_x) == abs(new_grid_y - original_grid_y):
+            self.valid_move = True
+
+        # check if there is a piece in the way of the bishop
+        x_direction = 1 if new_grid_x > original_grid_x else -1
+        y_direction = 1 if new_grid_y > original_grid_y else -1
+        x, y = original_grid_x + x_direction, original_grid_y + y_direction
+        while x != new_grid_x and y != new_grid_y:
+            if self.chessboard.current_board_state[y][x] != "Empty":
+                self.valid_move = False
+                return
+            x += x_direction
+            y += y_direction
+
+
 
         if self.targetting == False:
         # if there is a friendly figure on the destination square, the queen cannot move to this position
@@ -948,6 +993,8 @@ class Queen(ChessPiece):
         if new_grid_x != original_grid_x and new_grid_y != original_grid_y and abs(new_grid_x - original_grid_x) != abs(new_grid_y - original_grid_y):
             self.valid_move = False
             return
+        else:
+            self.valid_move = True
 
         # check if there is a piece in the way of the queen
         x_direction = 0 if new_grid_x == original_grid_x else 1 if new_grid_x > original_grid_x else -1
@@ -970,6 +1017,8 @@ class Queen(ChessPiece):
                 self.valid_move = True
 
         super(Queen, self).validate_move(chessboard)
+
+
 
 class King(ChessPiece):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -997,6 +1046,87 @@ class King(ChessPiece):
 
         super(King, self).validate_move(chessboard)
 
+
+    def mouseReleaseEvent(self, event):
+        
+        if chessboard.gameStarted == True:
+            new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()            
+
+
+            if self.color == "white":
+                # mechanic for castling
+                if self.first_move == True:
+                    # for short castling
+                    if new_grid_x == self.original_grid_x + 3 and new_grid_y == self.original_grid_y:
+                        # Check if the squares between the king and rook are empty
+                        if self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] == "Empty":
+                            # Check if the rook is in the correct position
+                            for item in self.scene().items():
+                                if isinstance(item, Rook) and item.getStartingGridPosition() == (7, 7) and item.first_move == True and item.color == self.color:
+                                    item.setPos(5 * 80, new_grid_y * 80)
+                                    item.updateBoardStatus()
+                                    item.first_move = False
+                                    self.chessboard.switchTurnsAndAddOneToTurnTimer()
+                                    break
+                            self.setPos((new_grid_x - 1) * 80, new_grid_y * 80)
+                            self.updateBoardStatus()
+                            self.first_move = False
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
+                            self.return_to_original_position()
+                    # for long castling
+                    if new_grid_x == self.original_grid_x - 4 and new_grid_y == self.original_grid_y:
+                        # Check if the squares between the king and rook are empty
+                        if self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] == "Empty":
+                            # Check if the rook is in the correct position
+                            for item in self.scene().items():
+                                if isinstance(item, Rook) and item.getStartingGridPosition() == (0, 7) and item.first_move == True and item.color == self.color:
+                                    item.setPos(3 * 80, new_grid_y * 80)
+                                    item.updateBoardStatus()
+                                    item.first_move = False
+                                    self.chessboard.switchTurnsAndAddOneToTurnTimer()
+                                    break
+                            self.setPos((new_grid_x + 2) * 80, new_grid_y * 80)
+                            self.updateBoardStatus()
+                            self.first_move = False
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
+                            self.return_to_original_position()
+            elif self.color == "black":
+                # mechanic for castling
+                if self.first_move == True:
+                    # for short castling
+                    if new_grid_x == self.original_grid_x + 3 and new_grid_y == self.original_grid_y:
+                        # Check if the squares between the king and rook are empty
+                        if self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] == "Empty":
+                            # Check if the rook is in the correct position
+                            for item in self.scene().items():
+                                if isinstance(item, Rook) and item.getStartingGridPosition() == (7, 0) and item.first_move == True and item.color == self.color:
+                                    item.setPos(5 * 80, new_grid_y * 80)
+                                    item.updateBoardStatus()
+                                    item.first_move = False
+                                    self.chessboard.switchTurnsAndAddOneToTurnTimer()
+                                    break
+                            self.setPos((new_grid_x - 1) * 80, new_grid_y * 80)
+                            self.updateBoardStatus()
+                            self.first_move = False
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
+                            self.return_to_original_position()
+                    # for long castling
+                    if new_grid_x == self.original_grid_x - 4 and new_grid_y == self.original_grid_y:
+                        # Check if the squares between the king and rook are empty
+                        if self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] == "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] == "Empty":
+                            # Check if the rook is in the correct position
+                            for item in self.scene().items():
+                                if isinstance(item, Rook) and item.getStartingGridPosition() == (0, 0) and item.first_move == True and item.color == self.color:
+                                    item.setPos(3 * 80, new_grid_y * 80)
+                                    item.updateBoardStatus()
+                                    item.first_move = False
+                                    self.chessboard.switchTurnsAndAddOneToTurnTimer()
+                                    break
+                            self.setPos((new_grid_x + 2) * 80, new_grid_y * 80)
+                            self.updateBoardStatus()
+                            self.first_move = False
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
+                            self.return_to_original_position()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
