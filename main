@@ -1,15 +1,16 @@
 # TO DO
 # Roszada
-# zbieranie ruchów
-# Zegar Prawie jest teraz tylko do warunku wygranej i końca gry
-# Warunek wygranej NO w miare git ale dalej do poprienia
+# zbieranie ruchów - JEST! tylko okienko dorobić ---------------- DOONEE!!!!
+# Zegar - Prawie jest teraz tylko do warunku wygranej i końca gry
+# Warunek wygranej -  NO w miare git ale dalej do poprienia
 # poruszanie figur notacją szachową
 
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit
+from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit, QTextEdit
 from PyQt5.QtSvg import QGraphicsSvgItem
-from PyQt5.QtGui import QBrush, QColor, QFont
-from PyQt5.QtCore import Qt, QPointF, QThread
+from PyQt5.QtGui import QBrush, QColor, QFont, QKeyEvent, QTextOption
+from PyQt5.QtCore import Qt, QPointF, QThread, pyqtSignal
+
 
 import threading
 import time   
@@ -35,6 +36,9 @@ class ClockThread(QThread):
 
 
 class ChessBoard(QGraphicsView):
+    # Signal to emit move in chess notation
+    moveMade = pyqtSignal(str)
+
     def __init__(self, *args, **kwargs):
         super(ChessBoard, self).__init__(*args, **kwargs)
         self.scene = QGraphicsScene(self)
@@ -50,6 +54,9 @@ class ChessBoard(QGraphicsView):
         self.isCheck = False
         self.witchKingisCheck = None
         self.gameStarted = False
+        self.x_grid_position_for_enter_move = None # Stupid ass fuck but lets try it
+        self.y_grid_position_for_enter_move = None
+        self.last_moved_piece = None
 
 
         # Opcjonalnie, możesz tutaj ustawić rozmiar widoku, aby pasował do rozmiaru sceny
@@ -225,87 +232,198 @@ class ChessBoard(QGraphicsView):
     
     def returnFigurePositionToChessCordinates(self, piece):
 
-        x = piece.x()
-        y = piece.y()
+        # Use integer division to avoid potential floating-point inaccuracies
+        grid_x = int(round(piece.x() / 80))
+        grid_y = int(round(piece.y() / 80))
 
-        # Table for converting the position of the figure to chess coordinates
-        if x / 80 == 0:
-            xChessCordinate = 'a'
-        elif x / 80 == 1:
-            xChessCordinate = 'b'
-        elif x / 80 == 2:
-            xChessCordinate = 'c'
-        elif x / 80 == 3:
-            xChessCordinate = 'd'
-        elif x / 80 == 4:
-            xChessCordinate = 'e'
-        elif x / 80 == 5:
-            xChessCordinate = 'f'
-        elif x / 80 == 6:
-            xChessCordinate = 'g'
-        elif x / 80 == 7:
-            xChessCordinate = 'h'
+        # Map the grid position to chess coordinates
+        chess_columns = "abcdefgh"
+        if 0 <= grid_x < 8:
+            xChessCordinate = chess_columns[grid_x]
+        else:
+            xChessCordinate = 'a'  # Default value or handle error
 
-        yChessCordinate = 8 - y / 80
+
+        # Assuming the y-coordinate is always valid, but you might want to check this as well
+        yChessCordinate = 8 - grid_y
+
+        # change piece class name to chess notation
+        pieceName = piece.__class__.__name__
+        if pieceName == "Pawn":
+            pieceName = ""
+        elif pieceName == "Rook":
+            pieceName = "R"
+        elif pieceName == "Knight":
+            pieceName = "N"
+        elif pieceName == "Bishop":
+            pieceName = "B"
+        elif pieceName == "Queen":
+            pieceName = "Q"
+        elif pieceName == "King":
+            pieceName = "K"
 
         # Sum the coordinates of the figure and pieceName
-        figurePositionInChessCordinates = str(piece.NamePiece) + xChessCordinate + str(yChessCordinate)
+        figurePositionInChessCordinates = pieceName + xChessCordinate + str(yChessCordinate)
 
         return figurePositionInChessCordinates
+
+    def returnChessCordinatesToFigurePosition(self, string):
+        x = None  # Ustaw wartość domyślną dla x
+        y = None  # Ustaw wartość domyślną dla y
+        figureName = None  # Ustaw wartość domyślną dla figureName
+        
+        if len(string) == 2:
+            figureName = "Pawn"
+
+            if string[0] == 'a':
+                x = 0
+            elif string[0] == 'b':
+                x = 1
+            elif string[0] == 'c':
+                x = 2
+            elif string[0] == 'd':
+                x = 3
+            elif string[0] == 'e':
+                x = 4
+            elif string[0] == 'f':
+                x = 5
+            elif string[0] == 'g':
+                x = 6
+            elif string[0] == 'h':
+                x = 7
+
+            y = (8 - int(string[1]))
+        elif len(string) == 3:
+            if string[0] == "R":
+                figureName = "Rook"
+            elif string[0] == "N":
+                figureName = "Knight"
+            elif string[0] == "B":
+                figureName = "Bishop"
+            elif string[0] == "Q":
+                figureName = "Queen"
+            elif string[0] == "K":
+                figureName = "King"
+
+            if string[1] == 'a':
+                x = 0
+            elif string[1] == 'b':
+                x = 1
+            elif string[1] == 'c':
+                x = 2
+            elif string[1] == 'd':
+                x = 3
+            elif string[1] == 'e':
+                x = 4
+            elif string[1] == 'f':
+                x = 5
+            elif string[1] == 'g':
+                x = 6
+            elif string[1] == 'h':
+                x = 7
+            
+            y = (8 - int(string[2]))
+        return x, y, figureName
 
 
 class MainWindow(QWidget):
     def __init__(self, chessboard):
         super().__init__()
-        self.setWindowTitle('Przykład aplikacji')
-        self.setFixedSize(900, 640)  # Ustawia pozycję i rozmiar głównego okna
+        self.setWindowTitle('Chess Game by Maksymilian Anzulewicz Beta 0.1')
+        self.setFixedSize(900, 640)
         self.chessBoard = chessboard
         self.Clock = ClockThread(self, 0, chessboard)
+        self.insideTimer = 0
 
-        # Tworzy i umieszcza szachownicę
-        self.chessBoard = ChessBoard(self)
-        self.chessBoard.setGeometry(0, 0, 640, 640)  # Ustawia pozycję i rozmiar szachownicy
+        # creates chess board
+        self.chessBoard.__init__(self)
+        self.chessBoard.setGeometry(0, 0, 640, 640) 
 
-        # Tworzy i umieszcza przyciski
+        # creates button for starting the game
         self.createButtonSTART(700, 20, 'START')
         self.createButton2(700, 50, 'Przycisk 2')
 
-        # Tworzy i umieszcza przyciski dla czasu
-        self.createButtonTime1(700, 120, 'Czas 10 min')
-        self.createButtonTime2(700, 150, 'Czas 1 min')
+        # creates buttons for time
+        self.createButtonTime1(700, 120, 'Time 10 min')
+        self.createButtonTime2(700, 150, 'Time 1 min')
 
-        # Tworzy i umieszcza etykietę
+        # creates label for time
         self.label = QLabel(self)
         self.label.setText("00:00")
-        self.label.move(700, 80)  # Ustawia pozycję etykiety
-        font = QFont("Arial", 20)  # Ustawia czcionkę na Arial i rozmiar na 20
+        self.label.move(710, 80) 
+        self.label.resize(110, 40)
+        font = QFont("Arial", 20)
         self.label.setFont(font)
 
-        # Tworzy i umieszcza pole do wpisywania tekstu
-        self.text_field = QLineEdit(self)
-        self.text_field.move(800, 120)  # Ustawia pozycję pola do wpisywania tekstu
+        #create text field for adding logs
+        self.text_field = QTextEdit(self)
+        self.text_field.move(700, 200)
+        self.text_field.resize(180, 50)
+
+
+        # creates text field for showing chess moves in chess notation
+        self.text_field2 = QTextEdit(self)
+        self.text_field2.move(700, 300)
+        self.text_field2.resize(180, 400)
+        self.text_field2.setPlaceholderText("Enter chess notation")
+        self.text_field2.setReadOnly(True)
+        self.text_field2.setAlignment(Qt.AlignTop)
+        # tekst musi się zawijać
+        self.text_field2.setWordWrapMode(QTextOption.WordWrap)
+
+        # for reading keys from keyboard
+        self.setFocusPolicy(Qt.StrongFocus)
+
+
+        # Connect the moveMade signal to the slot
+        self.chessBoard.moveMade.connect(self.updateMoveLog)
+
+
+    def updateMoveLog(self, move_notation):
+        # Method to update the QTextEdit or QLineEdit with the move notation
+        current_text = self.text_field2.toPlainText()
+        new_text = f"{current_text}\n{move_notation}"  # Append the new move
+        self.text_field2.setText(new_text)  # For QLineEdit
+        # If you're using QTextEdit, you might prefer: self.text_field2.append(move_notation)
 
     def updateLabel(self, text):
         self.label.setText(text)
+
+    def updateTextField2(self, text):
+        if self.insideTimer == 0:
+            return
+        else:
+            text = self.chessBoard.returnFigurePositionToChessCordinates(self.chessBoard.last_moved_piece)
+            self.text_field2.setText(text)
+            self.insideTimer += 1
+
+    # reading text from text field
+    def readTextField(self):
+        text = self.text_field.text()
+        return text
 
     def createButtonSTART(self, x, y, text):
         button = QPushButton(text, self)
         button.move(x, y)
         button.clicked.connect(self.onButtonClickSTART)
+        button.resize(100, 30)
     def createButton2(self, x, y, text):
         button = QPushButton(text, self)
         button.move(x, y)
         button.clicked.connect(self.onButtonClick2)
+        button.resize(100, 30)
 
     # Buttons for time
     def createButtonTime1(self, x, y, text):
         button = QPushButton(text, self)
         button.move(x, y)
         button.clicked.connect(self.onTimeButtonClick1)
+        button.resize(100, 30)
     def createButtonTime2(self, x, y, text):
         button = QPushButton(text, self)
         button.move(x, y)
         button.clicked.connect(self.onTimeButtonClick2)
+        button.resize(100, 30)
     
     # Logic in buttons for time
     def onTimeButtonClick1(self):
@@ -328,6 +446,35 @@ class MainWindow(QWidget):
     def onButtonClick2(self):
         print("Kliknięto przycisk")
 
+    # for moving pieces with keyboard
+    def keyPressEvent(self, event):
+
+        if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
+            self.handleEnterKeyPress()
+
+    def handleEnterKeyPress(self):
+        try:
+            chessCordinates = self.readTextField()
+            if self.chessBoard.gameStarted == True:
+                x, y, figureName = self.chessBoard.returnChessCordinatesToFigurePosition(chessCordinates)
+                self.chessBoard.x_grid_position_for_enter_move = x
+                self.chessBoard.y_grid_position_for_enter_move = y
+                pieces = self.chessBoard.get_all_pieces(self.chessBoard.current_turn)
+
+                for piece in pieces:
+                    if piece.__class__.__name__ == figureName:
+                        piece.enterPressedMove = True
+                        piece.validate_move(self.chessBoard)
+                        print(piece.valid_move)
+                        if piece.valid_move:
+                            print(f"jestem w handleEnterKeyPress i ruch jest poprawny")
+                            piece.move_piece()
+                            print(piece.valid_move)
+                            piece.enterPressedMove = False
+                            return
+                        piece.enterPressedMove = False
+        except Exception as e:
+            print(f"Wystąpił wyjątek: {e}")
 
 class ChessPiece(QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -349,6 +496,7 @@ class ChessPiece(QGraphicsSvgItem):
         self.target_Position_y = 0
         self.targetting = False # i know its so stupid but i dont know how to do it better
         self.pieceName = self.__class__.__name__
+        self.enterPressedMove = False
 
     def mousePressEvent(self, event):
         super(ChessPiece, self).mousePressEvent(event)
@@ -417,10 +565,11 @@ class ChessPiece(QGraphicsSvgItem):
                 self.valid_move = True
 
 
+        print(f"is valid move after {self.valid_move}")
 
         # print("tu patrze jaka figura ma targetting position")
         # print(self.target_Position_x, self.target_Position_y)
-        self.valid_move = True
+        # self.valid_move = True
 
     def get_current_position(self):
         return self.x(), self.y()
@@ -442,21 +591,27 @@ class ChessPiece(QGraphicsSvgItem):
 
         new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()
 
-        self.validate_move(self.chessboard)
 
+        self.validate_move(self.chessboard)
+        # print("jestem po funkcji validate_move")
+        # print(f" wartosc valid_move w move_piece = {self.valid_move}")
         if self.targetting == False:
             # updating the board state and moving the piece if the move is valid
             if self.valid_move == True:
+                notation = self.chessboard.returnFigurePositionToChessCordinates(self)
+                self.chessboard.moveMade.emit(notation)  # Emit the signal with the notation
+                # print("update board state and move the piece")
                 self.cupture_piece()
                 self.setPos(new_x, new_y)
                 self.updateBoardStatus()
                 self.chessboard.switchTurnsAndAddOneToTurnTimer()
                 self.first_move = False
                 self.valid_move = False
+                # print(self.chessboard.returnFigurePositionToChessCordinates(self))
                 # print(f"figure {self.color} {self.__class__.__name__} moved to {self.calculate_position()}")
             elif self.valid_move == False:
+                # print("get back to original position")
                 self.return_to_original_position()
-
 
     def mouseReleaseEvent(self, event):
         super(ChessPiece, self).mouseReleaseEvent(event)
@@ -471,6 +626,8 @@ class ChessPiece(QGraphicsSvgItem):
                 print(f"Check by {self.color}")
             if self.chessboard.is_checkmate(self.oposite_color):
                 print(f"Check by {self.oposite_color}")
+
+            self.chessboard.last_moved_piece = self
         elif self.chessboard.gameStarted == False:
             print("Game has not started yet")
             self.return_to_original_position()
@@ -514,14 +671,25 @@ class ChessPiece(QGraphicsSvgItem):
 
     def calculate_position(self):
 
-        new_x = round(self.pos().x() / 80) * 80
-        new_y = round(self.pos().y() / 80) * 80
+        if self.enterPressedMove == False:
+            new_x = round(self.pos().x() / 80) * 80
+            new_y = round(self.pos().y() / 80) * 80
 
-        new_grid_x = int(new_x / 80)
-        new_grid_y = int(new_y / 80)
+            new_grid_x = int(new_x / 80)
+            new_grid_y = int(new_y / 80)
 
+            print(f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = False")
+            return new_x, new_y, new_grid_x, new_grid_y
+        elif self.enterPressedMove == True:
 
-        return new_x, new_y, new_grid_x, new_grid_y
+            new_grid_x = self.chessboard.x_grid_position_for_enter_move
+            new_grid_y = self.chessboard.y_grid_position_for_enter_move
+
+            new_x = new_grid_x * 80
+            new_y = new_grid_y * 80
+
+            print(f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = True")
+            return new_x, new_y, new_grid_x, new_grid_y
     
     def getStartingGridPosition(self):
         return self.original_grid_x, self.original_grid_y
@@ -550,7 +718,12 @@ class Pawn(ChessPiece):
         elif self.targetting == True:
             new_x, new_y, new_grid_x, new_grid_y = self.target_Position_x, self.target_Position_y, int(self.target_Position_x / 80), int(self.target_Position_y / 80)
 
+
         original_grid_x, original_grid_y = self.getPreviousGridPosition()
+
+        print(f"original grid x: {original_grid_x}, original grid y: {original_grid_y}")
+        print(f"new grid x: {new_grid_x}, new grid y: {new_grid_y}")
+
         # if self.targetting == True:
         #     print(original_grid_x, original_grid_y, new_grid_x, new_grid_y)
 
@@ -578,14 +751,20 @@ class Pawn(ChessPiece):
         #     else:
         #         self.valid_move = False
         #         return
-
+        print(f"is valid move before {self.first_move}")
         # pawn movement mechanic
         if self.first_move == True:
-            if abs(new_grid_y - original_grid_y) > 2 and abs(new_grid_y - original_grid_y) > 2:
+            if new_grid_x != original_grid_x or abs(new_grid_y - original_grid_y) > 2:
+                print(new_grid_x == original_grid_x)
+                print(abs(new_grid_y - original_grid_y) > 2)
                 self.valid_move = False
                 return
+            else:
+                self.valid_move = True
         elif self.first_move == False:
-            if abs(new_grid_y - original_grid_y) > 1 and abs(new_grid_y - original_grid_y) > 1:
+            if abs(new_grid_x - original_grid_x) == 1 and abs(new_grid_y - original_grid_y) == 1:
+                self.valid_move = True
+            else:
                 self.valid_move = False
                 return
         
@@ -616,10 +795,10 @@ class Pawn(ChessPiece):
             self.valid_move = False
             return
 
-        # # If pawn moves more than 2 squares, it is not a valid move
-        # if abs(new_grid_y - original_grid_y) > 2:
-        #     self.valid_move = False
-        #     return
+        # If pawn moves more than 2 squares, it is not a valid move
+        if abs(new_grid_y - original_grid_y) > 2:
+             self.valid_move = False
+             return
 
         super(Pawn, self).validate_move(chessboard)
     
