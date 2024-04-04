@@ -830,8 +830,9 @@ class Pawn(ChessPiece):
         # if new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
         #     self.valid_move = False
         #     return
+
         # pawn cant move forward if there is a figure in front of it
-        if new_grid_y == original_grid_y and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
+        if new_grid_x == original_grid_x and self.chessboard.current_board_state[new_grid_y][new_grid_x] != "Empty":
             self.valid_move = False
             return
 
