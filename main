@@ -16,7 +16,13 @@ import threading
 import time   
 
 class ClockThread(QThread):
+<<<<<<< Updated upstream
     def __init__(self, mainWindow, timeAmount, chessboard, parent=None):
+=======
+    updateClock = pyqtSignal(str, str)  # Sygnał do aktualizacji etykiet zegarów
+
+    def __init__(self, parent=None):s
+>>>>>>> Stashed changes
         super().__init__(parent)
         self.timeAmount = timeAmount
         self.chessboard = chessboard
@@ -34,10 +40,34 @@ class ClockThread(QThread):
     def set(self, timeAmount):
         self.TimeAmount = timeAmount
 
+<<<<<<< Updated upstream
+=======
+            # Formatowanie czasu i wysyłanie sygnału do aktualizacji etykiet
+            whiteText = f"{self.whiteTime // 60}:{self.whiteTime % 60:02d}"
+            blackText = f"{self.blackTime // 60}:{self.blackTime % 60:02d}"
+            self.updateClock.emit(whiteText, blackText)
+
+    def setTime(self, whiteTime, blackTime):
+        self.whiteTime = whiteTime
+        self.blackTime = blackTime
+
+    def switchColor(self):
+        if self.activeColor == 'white':
+            self.activeColor = 'black'
+        elif self.activeColor == 'black':
+            self.activeColor = 'white'
+
+    def stop(self):
+        self.running = False
+>>>>>>> Stashed changes
 
 class ChessBoard(QGraphicsView):
     # Signal to emit move in chess notation
     moveMade = pyqtSignal(str)
+<<<<<<< Updated upstream
+=======
+    switchTurnSignal = pyqtSignal()
+>>>>>>> Stashed changes
 
     def __init__(self, *args, **kwargs):
         super(ChessBoard, self).__init__(*args, **kwargs)
@@ -172,14 +202,15 @@ class ChessBoard(QGraphicsView):
     # Method to switch turns
     def switchTurnsAndAddOneToTurnTimer(self):
         self.current_turn = 'black' if self.current_turn == 'white' else 'white'
-
-        #print(f"Turn: {self.current_turn}")
-        # Add one to the turn timer
         self.turnTimer += 1
+<<<<<<< Updated upstream
 
         # # Check if there is a check
         # if self.is_check(self.current_turn):
         #     print(f"Check by {self.current_turn}")
+=======
+        self.switchTurnSignal.emit() 
+>>>>>>> Stashed changes
 
     def is_checkmate(self, color):
         # Check if the king is in check
@@ -362,8 +393,21 @@ class MainWindow(QWidget):
         self.setWindowTitle('Chess Game by Maksymilian Anzulewicz Beta 0.1')
         self.setFixedSize(900, 640)
         self.chessBoard = chessboard
+<<<<<<< Updated upstream
         self.Clock = ClockThread(self, 0, chessboard)
         self.insideTimer = 0
+=======
+        self.insideTimer = 0
+
+        # Inicjalizacja ClockThread
+        self.clockThread = ClockThread()
+        # Nawiązanie połączenia sygnału z metodą
+        self.clockThread.updateClock.connect(self.updateClocks)
+        # Ustaw początkowy czas zegarów, na przykład na 15 minut dla każdego gracza
+        self.clockThread.setTime(15*60, 15*60)
+
+        self.chessBoard.switchTurnSignal.connect(self.switchClockColor)
+>>>>>>> Stashed changes
 
         # creates chess board
         self.chessBoard.__init__(self)
@@ -385,6 +429,17 @@ class MainWindow(QWidget):
         font = QFont("Arial", 20)
         self.label.setFont(font)
 
+<<<<<<< Updated upstream
+=======
+        # creates labels for time for white and black
+        self.whiteClockLabel = QLabel("15:00", self)
+        self.whiteClockLabel.move(660, 40)
+        self.whiteClockLabel.resize(60, 40)
+        self.blackClockLabel = QLabel("15:00", self)
+        self.blackClockLabel.move(660, 80)
+        self.blackClockLabel.resize(60, 40)
+
+>>>>>>> Stashed changes
         #create text field for adding logs
         self.text_field = QTextEdit(self)
         self.text_field.move(700, 200)
@@ -457,11 +512,19 @@ class MainWindow(QWidget):
     
     # Logic in buttons for time
     def onTimeButtonClick1(self):
+<<<<<<< Updated upstream
         self.Clock.set(600)
         self.updateLabel("10:00")
     def onTimeButtonClick2(self):
         self.Clock.set(60)
         self.updateLabel("01:00")
+=======
+        self.clockThread.setTime(600, 600)
+        self.updateClocks("10:00", "10:00")
+    def onTimeButtonClick2(self):
+        self.clockThread.setTime(60, 60)
+        self.updateClocks("01:00", "01:00")
+>>>>>>> Stashed changes
 
     def createWindowContainer(self, x, y, width, height, text):
         self.windowContainer = QWidget(self)
@@ -474,37 +537,8 @@ class MainWindow(QWidget):
         print("Game has started")
 
     def onButtonClick2(self):
+        self.clockThread.switchColor()
         print("Kliknięto przycisk")
-
-    # # for moving pieces with keyboard
-    # def keyPressEvent(self, event):
-
-    #     if event.key() == Qt.Key_Enter or event.key() == Qt.Key_Return:
-    #         self.handleEnterKeyPress()
-
-    # def handleEnterKeyPress(self):
-    #     try:
-    #         chessCordinates = self.readTextField()
-    #         if self.chessBoard.gameStarted == True:
-    #             x, y, figureName = self.chessBoard.returnChessCordinatesToFigurePosition(chessCordinates)
-    #             self.chessBoard.x_grid_position_for_enter_move = x
-    #             self.chessBoard.y_grid_position_for_enter_move = y
-    #             pieces = self.chessBoard.get_all_pieces(self.chessBoard.current_turn)
-
-    #             for piece in pieces:
-    #                 if piece.__class__.__name__ == figureName:
-    #                     piece.enterPressedMove = True
-    #                     piece.validate_move(self.chessBoard)
-    #                     print(piece.valid_move)
-    #                     if piece.valid_move:
-    #                         print(f"jestem w handleEnterKeyPress i ruch jest poprawny")
-    #                         piece.move_piece()
-    #                         print(piece.valid_move)
-    #                         piece.enterPressedMove = False
-    #                         return
-    #                     piece.enterPressedMove = False
-    #     except Exception as e:
-    #         print(f"Wystąpił wyjątek: {e}")
 
 class ChessPiece(QGraphicsSvgItem):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -1050,6 +1084,11 @@ class King(ChessPiece):
 
     def mouseReleaseEvent(self, event):
         
+<<<<<<< Updated upstream
+=======
+        # zmiennaRobocza = False
+
+>>>>>>> Stashed changes
         if chessboard.gameStarted == True:
             new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()            
 
@@ -1072,8 +1111,15 @@ class King(ChessPiece):
                             self.setPos((new_grid_x - 1) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
+<<<<<<< Updated upstream
                         elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
                             self.return_to_original_position()
+=======
+                            # zmiennaRobocza == True
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
+                            self.return_to_original_position()
+                            return
+>>>>>>> Stashed changes
                     # for long castling
                     if new_grid_x == self.original_grid_x - 4 and new_grid_y == self.original_grid_y:
                         # Check if the squares between the king and rook are empty
@@ -1089,8 +1135,15 @@ class King(ChessPiece):
                             self.setPos((new_grid_x + 2) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
+<<<<<<< Updated upstream
                         elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
                             self.return_to_original_position()
+=======
+                            # zmiennaRobocza == True
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
+                            self.return_to_original_position()
+                            return
+>>>>>>> Stashed changes
             elif self.color == "black":
                 # mechanic for castling
                 if self.first_move == True:
@@ -1109,8 +1162,16 @@ class King(ChessPiece):
                             self.setPos((new_grid_x - 1) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
+<<<<<<< Updated upstream
                         elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
                             self.return_to_original_position()
+=======
+                            # zmiennaRobocza == True
+                            
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
+                           self.return_to_original_position()
+                           return
+>>>>>>> Stashed changes
                     # for long castling
                     if new_grid_x == self.original_grid_x - 4 and new_grid_y == self.original_grid_y:
                         # Check if the squares between the king and rook are empty
@@ -1126,8 +1187,22 @@ class King(ChessPiece):
                             self.setPos((new_grid_x + 2) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
+<<<<<<< Updated upstream
                         elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
                             self.return_to_original_position()
+=======
+                            # zmiennaRobocza == True
+                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
+                            self.return_to_original_position()
+                            return
+
+
+        # if zmiennaRobocza == False: 
+        #     super(King, self).mouseReleaseEvent(event)
+        # elif zmiennaRobocza == True:
+        #     return
+
+>>>>>>> Stashed changes
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
