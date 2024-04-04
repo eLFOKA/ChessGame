@@ -9,35 +9,60 @@ import sys
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit, QTextEdit
 from PyQt5.QtSvg import QGraphicsSvgItem
 from PyQt5.QtGui import QBrush, QColor, QFont, QKeyEvent, QTextOption
-from PyQt5.QtCore import Qt, QPointF, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QPointF, QThread, pyqtSignal, pyqtSlot
 
 
 import threading
 import time   
 
 class ClockThread(QThread):
-    def __init__(self, mainWindow, timeAmount, chessboard, parent=None):
+    updateClock = pyqtSignal(str, str)  # Sygnał do aktualizacji etykiet zegarów
+
+
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.timeAmount = timeAmount
-        self.chessboard = chessboard
-        self.mainWindow = mainWindow
-        self.TimeAmount = 0
+        self.whiteTime = 0
+        self.blackTime = 0
+        self.activeColor = 'white'  # Domyślnie biały zaczyna grę
+        self.running = False
 
     def run(self):
-        while True:
+        self.running = True
+        while self.running:
             time.sleep(1)
-            self.TimeAmount -= 1
-            self.mainWindow.updateLabel(f"{self.TimeAmount // 60}:{self.TimeAmount % 60}")
-            if self.TimeAmount == 0:
-                print("Time is up")
-    
-    def set(self, timeAmount):
-        self.TimeAmount = timeAmount
+            if self.activeColor == 'white':
+                self.whiteTime -= 1
+                if self.whiteTime <= 0:
+                    self.running = False
+            else:
+                self.blackTime -= 1
+                if self.blackTime <= 0:
+                    self.running = False
 
+            # Formatowanie czasu i wysyłanie sygnału do aktualizacji etykiet
+            whiteText = f"{self.whiteTime // 60}:{self.whiteTime % 60:02d}"
+            blackText = f"{self.blackTime // 60}:{self.blackTime % 60:02d}"
+            self.updateClock.emit(whiteText, blackText)
+
+    def setTime(self, whiteTime, blackTime):
+        self.whiteTime = whiteTime
+        self.blackTime = blackTime
+
+    @pyqtSlot()
+    def switchColor(self):
+        if self.activeColor == 'white':
+            self.activeColor = 'black'
+        elif self.activeColor == 'black':
+            self.activeColor = 'white'
+
+    def stop(self):
+        self.running = False
 
 class ChessBoard(QGraphicsView):
     # Signal to emit move in chess notation
     moveMade = pyqtSignal(str)
+    switchTurnSignal = pyqtSignal()
+
 
     def __init__(self, *args, **kwargs):
         super(ChessBoard, self).__init__(*args, **kwargs)
@@ -176,6 +201,9 @@ class ChessBoard(QGraphicsView):
         #print(f"Turn: {self.current_turn}")
         # Add one to the turn timer
         self.turnTimer += 1
+
+        self.switchTurnSignal.emit() 
+        # print(self.turnTimer)
 
         # # Check if there is a check
         # if self.is_check(self.current_turn):
@@ -355,15 +383,16 @@ class ChessBoard(QGraphicsView):
             y = (8 - int(string[2]))
         return x, y, figureName
 
-
 class MainWindow(QWidget):
+
     def __init__(self, chessboard):
         super().__init__()
         self.setWindowTitle('Chess Game by Maksymilian Anzulewicz Beta 0.1')
         self.setFixedSize(900, 640)
         self.chessBoard = chessboard
-        self.Clock = ClockThread(self, 0, chessboard)
+        self.Clock = ClockThread(self)
         self.insideTimer = 0
+        self.chessBoard.switchTurnSignal.connect(self.switchClockColor)
 
         # creates chess board
         self.chessBoard.__init__(self)
@@ -384,6 +413,17 @@ class MainWindow(QWidget):
         self.label.resize(110, 40)
         font = QFont("Arial", 20)
         self.label.setFont(font)
+
+        # creates labels for time for white and black
+        self.whiteClockLabel = QLabel("15:00", self)
+        self.whiteClockLabel.move(710, 40)
+        self.blackClockLabel = QLabel("15:00", self)
+        self.blackClockLabel.move(710, 80)
+
+        self.clockThread = ClockThread()
+        self.clockThread.updateClock.connect(self.updateClocks)
+        # Ustaw początkowy czas zegarów, na przykład na 15 minut dla każdego gracza
+        self.clockThread.setTime(15*60, 15*60)
 
         #create text field for adding logs
         self.text_field = QTextEdit(self)
@@ -408,6 +448,13 @@ class MainWindow(QWidget):
         # Connect the moveMade signal to the slot
         self.chessBoard.moveMade.connect(self.updateMoveLog)
 
+    # Metoda do aktualizacji etykiet zegarów
+    def updateClocks(self, whiteTime, blackTime):
+        self.whiteClockLabel.setText(whiteTime)
+        self.blackClockLabel.setText(blackTime)
+
+    def switchClockColor(self):
+        self.clockThread.switchColor()
 
     def updateMoveLog(self, move_notation):
         # Method to update the QTextEdit or QLineEdit with the move notation
@@ -457,11 +504,11 @@ class MainWindow(QWidget):
     
     # Logic in buttons for time
     def onTimeButtonClick1(self):
-        self.Clock.set(600)
-        self.updateLabel("10:00")
+        self.Clock.setTime(600, 600)
+        self.updateClocks("10:00", "10:00")
     def onTimeButtonClick2(self):
-        self.Clock.set(60)
-        self.updateLabel("01:00")
+        self.Clock.setTime(60, 60)
+        self.updateClocks("01:00", "01:00")
 
     def createWindowContainer(self, x, y, width, height, text):
         self.windowContainer = QWidget(self)
@@ -470,7 +517,7 @@ class MainWindow(QWidget):
 
     def onButtonClickSTART(self):
         self.chessBoard.gameStarted = True
-        self.Clock.start()
+        self.clockThread.start()
         print("Game has started")
 
     def onButtonClick2(self):
@@ -1043,13 +1090,16 @@ class King(ChessPiece):
         if abs(new_grid_x - original_grid_x) > 1 or abs(new_grid_y - original_grid_y) > 1:
             self.valid_move = False
             return
+        elif not abs(new_grid_x - original_grid_x) > 1 or abs(new_grid_y - original_grid_y) > 1:
+            self.valid_move = True
 
 
         super(King, self).validate_move(chessboard)
 
-
     def mouseReleaseEvent(self, event):
         
+        zmiennaRobocza = False
+
         if chessboard.gameStarted == True:
             new_x, new_y, new_grid_x, new_grid_y = self.calculate_position()            
 
@@ -1072,8 +1122,10 @@ class King(ChessPiece):
                             self.setPos((new_grid_x - 1) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
-                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
-                            self.return_to_original_position()
+                            zmiennaRobocza == True
+                        # elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
+                        #     self.return_to_original_position()
+                        #     return
                     # for long castling
                     if new_grid_x == self.original_grid_x - 4 and new_grid_y == self.original_grid_y:
                         # Check if the squares between the king and rook are empty
@@ -1089,8 +1141,10 @@ class King(ChessPiece):
                             self.setPos((new_grid_x + 2) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
-                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
-                            self.return_to_original_position()
+                            zmiennaRobocza == True
+                        # elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
+                        #     self.return_to_original_position()
+                        #     return
             elif self.color == "black":
                 # mechanic for castling
                 if self.first_move == True:
@@ -1109,8 +1163,11 @@ class King(ChessPiece):
                             self.setPos((new_grid_x - 1) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
-                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
-                            self.return_to_original_position()
+                            zmiennaRobocza == True
+                            
+                        # elif self.chessboard.current_board_state[new_grid_y][new_grid_x - 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x - 2] != "Empty":
+                        #    self.return_to_original_position()
+                        #    return
                     # for long castling
                     if new_grid_x == self.original_grid_x - 4 and new_grid_y == self.original_grid_y:
                         # Check if the squares between the king and rook are empty
@@ -1126,8 +1183,17 @@ class King(ChessPiece):
                             self.setPos((new_grid_x + 2) * 80, new_grid_y * 80)
                             self.updateBoardStatus()
                             self.first_move = False
-                        elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
-                            self.return_to_original_position()
+                            zmiennaRobocza == True
+                        # elif self.chessboard.current_board_state[new_grid_y][new_grid_x + 1] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 2] != "Empty" and self.chessboard.current_board_state[new_grid_y][new_grid_x + 3] != "Empty":
+                        #     self.return_to_original_position()
+                        #     return
+
+
+        if zmiennaRobocza == False: 
+            super(King, self).mouseReleaseEvent(event)
+        elif zmiennaRobocza == True:
+            return
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
