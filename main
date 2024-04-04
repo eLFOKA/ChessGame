@@ -714,7 +714,7 @@ class ChessPiece(QGraphicsSvgItem):
         new_grid_x = int(new_x / 80)
         new_grid_y = int(new_y / 80)
 
-        print(f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = False")
+        # (f"new x: {new_grid_x}, new y: {new_grid_y} dla enterPressedMove = False")
         return new_x, new_y, new_grid_x, new_grid_y
         # elif self.enterPressedMove == True:
 
