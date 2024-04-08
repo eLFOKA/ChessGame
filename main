@@ -6,7 +6,7 @@
 # poruszanie figur notacją szachową
 
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit, QTextEdit
+from PyQt5.QtWidgets import QApplication, QWidget, QMainWindow, QPushButton, QVBoxLayout, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit, QTextEdit
 from PyQt5.QtSvg import QGraphicsSvgItem
 from PyQt5.QtGui import QBrush, QColor, QFont, QKeyEvent, QTextOption
 from PyQt5.QtCore import Qt, QPointF, QThread, pyqtSignal
@@ -15,19 +15,20 @@ from PyQt5.QtCore import Qt, QPointF, QThread, pyqtSignal
 import threading
 import time   
 
+
 class ClockThread(QThread):
-    def __init__(self, mainWindow, timeAmount, chessboard, parent=None):
+    def __init__(self, timeAmount, parent=None):
         super().__init__(parent)
         self.timeAmount = timeAmount
-        self.chessboard = chessboard
-        self.mainWindow = mainWindow
+        # self.chessboard = chessboard
+        # self.mainWindow = mainWindow
         self.TimeAmount = 0
 
     def run(self):
         while True:
             time.sleep(1)
             self.TimeAmount -= 1
-            self.mainWindow.updateLabel(f"{self.TimeAmount // 60}:{self.TimeAmount % 60}")
+            # self.mainWindow.updateLabel(f"{self.TimeAmount // 60}:{self.TimeAmount % 60}")
             if self.TimeAmount == 0:
                 print("Time is up")
     
@@ -35,18 +36,19 @@ class ClockThread(QThread):
         self.TimeAmount = timeAmount
 
 
-class ChessBoard(QGraphicsView):
+class ChessBoard():
     # Signal to emit move in chess notation
     moveMade = pyqtSignal(str)
 
-    def __init__(self, *args, **kwargs):
-        super(ChessBoard, self).__init__(*args, **kwargs)
-        self.scene = QGraphicsScene(self)
-        self.setScene(self.scene)
-        self.drawBoard()
-        self.setFixedSize(900, 640)
-        self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.addPieces()
+    def __init__(self, clk, win):
+        super(ChessBoard, self).__init__()
+
+        # self.window = win
+        # self.window.createWindowContainer(0, 0, 640, 640, "Chess Game")
+        # self.drawBoard()
+        # self.setFixedSize(900, 640)
+        # self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        # self.addPieces()
         self.current_turn = 'white'  # White starts the game
         self.current_board_state = [[0 for _ in range(8)] for _ in range(8)]
         self.turnTimer = 0
@@ -60,8 +62,9 @@ class ChessBoard(QGraphicsView):
 
 
         # Opcjonalnie, możesz tutaj ustawić rozmiar widoku, aby pasował do rozmiaru sceny
-        self.scene.setSceneRect(0, 0, 640, 640)  # Zakładając, że rozmiar planszy to 640x640
-        self.setFixedSize(900 + 2, 640 + 2)  # +2 dla marginesu; dostosuj według potrzeb
+        # self.scene.setSceneRect(0, 0, 640, 640)  # Zakładając, że rozmiar planszy to 640x640
+        # self.setFixedSize(900 + 2, 640 + 2)  # +2 dla marginesu; dostosuj według potrzeb
+
 
     def oposite_color(self, color):
         return 'white' if color == 'black' else 'black'
@@ -77,11 +80,7 @@ class ChessBoard(QGraphicsView):
                 return False
 
         # Mechanic that check if king is in check
-
-
         # Check if the squares the king crosses are attacked
-
-
         return True
 
     def get_king(self, color):
@@ -201,15 +200,6 @@ class ChessBoard(QGraphicsView):
                         return False
 
         return True
-
-    def drawBoard(self):
-        light_color = QColor(173, 216, 230)  # Light blue
-        dark_color = QColor(0, 0, 139)       # Dark blue
-        for i in range(8):
-            for j in range(8):
-                rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
-                rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
-                self.scene.addItem(rect)
 
     def addPieces(self):
         # Black pieces
@@ -356,18 +346,28 @@ class ChessBoard(QGraphicsView):
         return x, y, figureName
 
 
-class MainWindow(QWidget):
-    def __init__(self, chessboard):
+class MainWindow(QMainWindow):
+    def __init__(self):
         super().__init__()
-        self.setWindowTitle('Chess Game by Maksymilian Anzulewicz Beta 0.1')
-        self.setFixedSize(900, 640)
-        self.chessBoard = chessboard
-        self.Clock = ClockThread(self, 0, chessboard)
-        self.insideTimer = 0
 
+
+        # self.chessBoard = chessboard
+        # self.Clock = ClockThread(self, 0, chessboard)
+        # self.insideTimer = 0
+
+
+        self.scene = QGraphicsScene(self)
+        self.scene.setSceneRect(0, 0, 640, 640)
+        self.drawBoard()
+
+        self.view = QGraphicsView(self)
+        self.view.setGeometry(0, 0, 642, 642)
+        self.view.setScene(self.scene)
+
+        # self.view.show()
         # creates chess board
-        self.chessBoard.__init__(self)
-        self.chessBoard.setGeometry(0, 0, 640, 640) 
+        # self.chessBoard.__init__(self)
+        # self.chessBoard.setGeometry(0, 0, 640, 640) 
 
         # creates button for starting the game
         self.createButtonSTART(700, 20, 'START')
@@ -401,12 +401,28 @@ class MainWindow(QWidget):
         # tekst musi się zawijać
         self.text_field2.setWordWrapMode(QTextOption.WordWrap)
 
-        # for reading keys from keyboard
-        self.setFocusPolicy(Qt.StrongFocus)
+        # # for reading keys from keyboard
+        # self.setFocusPolicy(Qt.StrongFocus)
 
 
-        # Connect the moveMade signal to the slot
-        self.chessBoard.moveMade.connect(self.updateMoveLog)
+        # # Connect the moveMade signal to the slot
+        # self.chessBoard.moveMade.connect(self.updateMoveLog)
+
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle('Chess Game by Maksymilian Anzulewicz Beta 0.1')
+        self.setFixedSize(1024, 900)
+        self.show()
+
+    def drawBoard(self):
+        light_color = QColor(173, 216, 230)  # Light blue
+        dark_color = QColor(0, 0, 139)       # Dark blue
+        for i in range(8):
+            for j in range(8):
+                rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
+                rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
+                self.scene.addItem(rect)
 
 
     def updateMoveLog(self, move_notation):
@@ -420,12 +436,13 @@ class MainWindow(QWidget):
         self.label.setText(text)
 
     def updateTextField2(self, text):
-        if self.insideTimer == 0:
-            return
-        else:
-            text = self.chessBoard.returnFigurePositionToChessCordinates(self.chessBoard.last_moved_piece)
-            self.text_field2.setText(text)
-            self.insideTimer += 1
+        # if self.insideTimer == 0:
+        #     return
+        # else:
+        #     text = self.chessBoard.returnFigurePositionToChessCordinates(self.chessBoard.last_moved_piece)
+        #     self.text_field2.setText(text)
+        #     self.insideTimer += 1
+        return
 
     # reading text from text field
     def readTextField(self):
@@ -469,12 +486,22 @@ class MainWindow(QWidget):
         self.windowContainer.setWindowTitle(text)
 
     def onButtonClickSTART(self):
-        self.chessBoard.gameStarted = True
-        self.Clock.start()
-        print("Game has started")
+        # self.chessBoard.gameStarted = True
+        # self.Clock.start()
+        # print("Game has started")
+        return
 
     def onButtonClick2(self):
         print("Kliknięto przycisk")
+
+    def drawBoard(self):
+        light_color = QColor(173, 216, 230)  # Light blue
+        dark_color = QColor(0, 0, 139)       # Dark blue
+        for i in range(8):
+            for j in range(8):
+                rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
+                rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
+                self.scene.addItem(rect)
 
     # # for moving pieces with keyboard
     # def keyPressEvent(self, event):
@@ -738,7 +765,6 @@ class ChessPiece(QGraphicsSvgItem):
 
     def getPreviousGridPosition(self):
         return self.original_grid_x, self.original_grid_y   
-
 
 class Pawn(ChessPiece):
     def __init__(self, image_path, x, y, color, chessboard):
@@ -1135,7 +1161,8 @@ class King(ChessPiece):
         
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    chessboard = ChessBoard()
-    window = MainWindow(chessboard)
-    window.show()
+    win = MainWindow()
+    clk = ClockThread(0)
+    chessboard = ChessBoard(clk, win)
+    # win.show()
     sys.exit(app.exec_())
