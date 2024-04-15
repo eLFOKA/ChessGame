@@ -12,26 +12,108 @@
 # numerical vs grid cordinates vs chess cordinates
 # (for pawn x,y) 80, 160 -> 1, 2 -> b2
 
+# communication protocol
+# string = {name} {from x,y} {to x,y}
+# example: {p} {1,2} {1,3}
+# p - pawn, k-king, q-queen, r-rook, b-bishop, n-knight
 
-import sys
-from PyQt5.QtWidgets import QApplication, QRadioButton, QGraphicsSceneMouseEvent, QWidget, QMainWindow, QPushButton, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit, QTextEdit
+
+from PyQt5.QtWidgets import QApplication, QRadioButton, QGraphicsSceneMouseEvent, QMessageBox, QWidget, QMainWindow, QPushButton, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit, QTextEdit
 from PyQt5.QtSvg import QGraphicsSvgItem
 from PyQt5.QtGui import QBrush, QColor, QFont, QKeyEvent, QTextOption
-from PyQt5.QtCore import Qt, QThread
+from PyQt5.QtCore import QObject, Qt, QThread
 import numpy as np
 import sqlite3
 import sys
 import xml.etree.ElementTree as ET
 import json
 
-
-import threading
 import time   
+# importuj biblioteki które są koniecznie do komunikacji sieciowej
+import socket
+import select
+
+# Global variables
+# Variables that are used across multiple functions
+ProgramName = "Chess Game by Maksymilian Anzulewicz Beta 0.2"
+
+class connection(QThread):
+    def __init__(self, presenter):
+        super().__init__()
+        self.presenter = presenter
+        self.server = None
+        self.client = None
+        self.conn = None
+        self.addr = None
+        self.port = None
+        self.ip = None
+        self.isServer = False
+        self.isClient = False
+    
+    def run(self):
+        while True:
+            if self.isServer:
+                if self.conn == None:
+                    self.conn, self.addr = self.server.accept()
+                # wait for msg of move from other player
+                dataServer = self.receive()
+                print(dataServer)
+                # encode data back to string
+                dataServer = dataServer.decode('utf-8')
+                if not dataServer == '':
+                    self.presenter.summarizeOtherPlayeMove(dataServer)
+                    print(dataServer)
+            elif self.isClient:
+                dataClient = self.receive()
+                print(dataClient)
+                dataClient = dataClient.decode('utf-8')    
+                if not dataClient == '':
+                    self.presenter.summarizeOtherPlayeMove(dataClient)
+                    print(dataClient)
+
+            time.sleep(1)
+    def createServer(self, port):
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind(('localhost', port))
+        self.server.listen(10)
+        self.isServer = True
+        self.isClient = False
+        self.port = port
+        print(f"Server has been created on port {port}") 
+    def joinServer(self, ip, port):
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.connect((ip, port))
+        self.ip = ip
+        self.port = port
+        self.isClient = True
+        self.isServer = False
+        print(f"Client has been created on ip {ip} and port {port}") 
+    def closeConnection(self):
+        if self.isServer:
+            self.conn.close()
+            self.server.close()
+            print("Server has been closed")
+        elif self.isClient:
+            self.client.close()
+            print("Client has been closed")
+        self.isServer = False
+        self.isClient = False   
+    def send(self, data):
+        if self.isServer:
+            self.conn.send(data.encode('utf-8'))
+        elif self.isClient:
+            self.client.send(data.encode('utf-8'))   
+    def receive(self):
+        if self.isServer:
+            return self.conn.recv(1024)
+        elif self.isClient:
+            return self.client.recv(1024)
 
 
 class ClockThread(QThread):
-    def __init__(self, timeAmount, parent=None):
-        super().__init__(parent)
+    def __init__(self, timeAmount, presenter):
+        super().__init__()
+        self.presenter = presenter
         self.timeAmount = timeAmount
         # self.model = model
         # self.mainWindow = mainWindow
@@ -41,12 +123,18 @@ class ClockThread(QThread):
         while True:
             time.sleep(1)
             self.TimeAmount -= 1
-            # self.mainWindow.updateLabel(f"{self.TimeAmount // 60}:{self.TimeAmount % 60}")
+            self.presenter.win.updateLabel(self.convertTimeToString(self.TimeAmount))
+            self.presenter.win.scene.update()
             if self.TimeAmount == 0:
                 print("Time is up")
     
     def set(self, timeAmount):
         self.TimeAmount = timeAmount
+
+    def convertTimeToString(self, timeAmount):
+        minutes = timeAmount // 60
+        seconds = timeAmount % 60
+        return f"{minutes:02}:{seconds:02}"
 
 class model():
     def __init__(self, presenter):
@@ -70,7 +158,7 @@ class model():
     def updateBoardState(self, name, prevX, prevY, x, y):
         # all cordinates here are in grid cordinates
         # update the board state after the move
-        print(f"Moving {name} from {prevX}, {prevY} to {x}, {y}")
+        # print(f"Moving {name} from {prevX}, {prevY} to {x}, {y}")
         self.currentBoardState[y][x] = name
         self.currentBoardState[prevY][prevX] = 'empty'
     
@@ -104,6 +192,20 @@ class MainWindow(QMainWindow):
     def __init__(self, presenter):
         super(MainWindow, self).__init__()
         self.presenter = presenter
+        # variable containing the screen resolution of the user
+        self.ScrResWidtth, self.ScrResHeight = self.getUserScreenResolution()
+
+
+        self.initConfigUI()
+
+    # initUI methods
+    # Methods that initialize the user interface
+    def initMainUI(self):
+        self.setWindowTitle(ProgramName)
+        #move window to left top corner
+        self.move(0, 0)
+        # self.setFixedSize(self.ScrResWidtth, self.ScrResHeight)
+        self.setFixedSize(900, 700)
 
         # creating scene and view for chess board
         self.scene = QGraphicsScene(self)
@@ -112,83 +214,51 @@ class MainWindow(QMainWindow):
         self.view.setGeometry(0, 0, 642, 642)
         self.view.setScene(self.scene)
 
-        self.initUI()
-        self.addPieces()
-
-
-    def initUI(self):
-        self.setWindowTitle('Chess Game by Maksymilian Anzulewicz Beta 0.2')
-        self.setFixedSize(1128, 720)
-
         self.drawBoard()
+        self.addPieces()
 
         # creates buttons, text fields and labels
         self.createButtonSTART(700, 20, 'START')
-        self.createButton2(700, 50, 'Przycisk 2')
+        self.createButton(700, 50, '2')
         self.createButtonTime1(700, 120, 'Time 10 min')
         self.createButtonTime2(700, 150, 'Time 1 min')
         self.createlabel(710, 80, 110, 40, "00:00")
-        self.createTextField(700, 200, 180, 50)
-        self.createTextField2(700, 300, 180, 400)
-        self.createRadioButtons(820, 20, 180, 50)
-        self.createLabelsForRadioButtons(840, 20, 180, 50, "AI bot", "Player same PC", "Multiplayer")
-        self.createTextBoxesForIPandPort(820, 120, 100, 20)
-        self.createLabelsForIPandPort(930, 120, 100, 20, "IP", "Port")
+        self.createTextField(700, 250, 180, 50)
+        self.createTextField2(700, 320, 180, 300)
+        self.createLabelCurrentPlayerTurn(700, 630, 180, 20, self.presenter.currentPlayer)
+
+        self.show()
+    def initConfigUI(self):
+        self.setWindowTitle(ProgramName)
+        winHeight = round(self.ScrResHeight / 2)
+        winWidth = round(self.ScrResWidtth / 3)
+        print(f"Width: {winWidth}, Height: {winHeight}")
+
+        controlsWidth = 270
+        controlsHeight = 30
+
+
+        self.setFixedSize(winWidth, winHeight)
+        self.createlabel(controlsWidth, controlsHeight, 120, 50, "Player name:", 12)
+        self.createTextField(controlsWidth, controlsHeight + 50, 120, 30)
+        self.createRadioButtons(controlsWidth, controlsHeight + 100, 20, 20)
+        self.createLabelsForRadioButtons(controlsWidth + 20, controlsHeight + 100, 120, 20, "AI bot", "Player same PC", "Multiplayer")
+        self.createTextBoxesForIPandPort(controlsWidth, controlsHeight + 200, 120, 20)
+        self.createLabelsForIPandPort(controlsWidth + 125, controlsHeight + 200, 80, 20, "IP", "Port")
+        self.createButtonConfigAccept(controlsWidth, controlsHeight + 282, 100, 30, "Accept")
+        self.createButtonsForHostorJoin(controlsWidth, controlsHeight + 250)
+
 
         self.show()
 
-    def drawBoard(self):
-        light_color = QColor(173, 216, 230)  # Light blue
-        dark_color = QColor(0, 0, 139)       # Dark blue
-        for i in range(8):
-            for j in range(8):
-                rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
-                rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
-                self.scene.addItem(rect)
-    def updateMoveLog(self, move_notation):
-        # Method to update the QTextEdit or QLineEdit with the move notation
-        current_text = self.text_field2.toPlainText()
-        new_text = f"{current_text}\n{move_notation}"  # Append the new move
-        self.text_field2.setText(new_text)  # For QLineEdit
-        # If you're using QTextEdit, you might prefer: self.text_field2.append(move_notation)
-    def updateLabel(self, text):
-        self.label.setText(text)
-    def updateTextField2(self, text):
-        # if self.insideTimer == 0:
-        #     return
-        # else:
-        #     text = self.model.returnFigurePositionToChessCordinates(self.model.last_moved_piece)
-        #     self.text_field2.setText(text)
-        #     self.insideTimer += 1
-        return
-    def readTextField(self):
-        text = self.text_field.text()
-        return text
-    def readIP(self):
-        text = self.textBoxIP.text()
-        self.textBoxIP.clear()
-        return text
-    def readPort(self):
-        text = self.textBoxPort.text()
-        self.textBoxPort.clear()
-        return text
-    def readRadioButton(self):
-        playerchoice = ""
-        if self.radioButtonAIbot.isChecked():
-            playerchoice = "AI bot"
-        elif self.radiobuttonPlayerSamePC.isChecked():
-            playerchoice = "Player same PC"
-        elif self.radiobuttonMultiplayer.isChecked():
-            playerchoice = "Multiplayer"
-
-        return playerchoice
-
+    # createWidget methods
+    # Methods that create widgets
     def createButtonSTART(self, x, y, text):
         button = QPushButton(text, self)
         button.move(x, y)
         button.clicked.connect(self.onButtonClickSTART)
         button.resize(100, 30)
-    def createButton2(self, x, y, text):
+    def createButton(self, x, y, text):
         button = QPushButton(text, self)
         button.move(x, y)
         button.clicked.connect(self.onButtonClick2)
@@ -207,12 +277,12 @@ class MainWindow(QMainWindow):
         self.windowContainer = QWidget(self)
         self.windowContainer.setGeometry(x, y, width, height)
         self.windowContainer.setWindowTitle(text)
-    def createlabel(self, x, y, width, height, text):
+    def createlabel(self, x, y, width, height, text, font_size = 10):
         self.label = QLabel(self)
         self.label.setText(text)
         self.label.move(x, y) 
         self.label.resize(width, height)
-        self.label.setFont(QFont("Arial", 20))
+        self.label.setFont(QFont("Arial", font_size))
     def createTextField(self, x, y, width, height):
         self.text_field = QLineEdit(self)
         self.text_field.move(x, y)
@@ -269,21 +339,16 @@ class MainWindow(QMainWindow):
         self.labelPort.setText(text2)
         self.labelPort.move(x, y + 25)
         self.labelPort.resize(width, height)
-
-    def onTimeButtonClick1(self):
-        self.Clock.set(600)
-        self.updateLabel("10:00")
-    def onTimeButtonClick2(self):
-        self.Clock.set(60)
-        self.updateLabel("01:00")
-    def onButtonClickSTART(self):
-        # self.model.gameStarted = True
-        # self.Clock.start()
-        # print("Game has started")
-        return
-    def onButtonClick2(self):
-        print("Kliknięto przycisk")
-
+    def createButtonForPlayingWithAnotherPlayer(self, x, y, text):
+        button = QPushButton(text, self)
+        button.move(x, y)
+        button.clicked.connect(self.onButtonClick2)
+        button.resize(100, 30)
+    def createButtonConfigAccept(self, x, y, width, height, text):
+        button = QPushButton(text, self)
+        button.move(x, y)
+        button.clicked.connect(self.onButtonConifgAccept)
+        button.resize(width, height)
     def drawBoard(self):
         light_color = QColor(173, 216, 230)  # Light blue
         dark_color = QColor(0, 0, 139)       # Dark blue
@@ -292,7 +357,129 @@ class MainWindow(QMainWindow):
                 rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
                 rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
                 self.scene.addItem(rect)
+    def createButtonsForHostorJoin(self, x, y):
+        buttonHost = QPushButton("Host", self)
+        buttonHost.move(x, y)
+        buttonHost.clicked.connect(self.onButtonHost)
+        buttonHost.resize(50, 30)
 
+        buttonJoin = QPushButton("Join", self)
+        buttonJoin.move(x + 52, y)
+        buttonJoin.clicked.connect(self.onButtonJoin)
+        buttonJoin.resize(50, 30)
+    def createLabelCurrentPlayerTurn(self, x, y, width, height, text):
+        self.labelCurrentPlayerTurn = QLabel(self)
+        self.labelCurrentPlayerTurn.setText(text)
+        self.labelCurrentPlayerTurn.move(x, y)
+        self.labelCurrentPlayerTurn.resize(width, height)
+
+
+    # info windows methods
+    def createInfoWindow(self, text):
+        QMessageBox.about(self, "Info", text)
+        # set messagebox focus only
+        
+
+    # Widget event methods
+    # Methods that handle widget events
+    def onTimeButtonClick1(self):
+        self.Clock.set(600)
+        self.updateLabel("10:00")
+    def onTimeButtonClick2(self):
+        self.Clock.set(60)
+        self.updateLabel("01:00")
+    def onButtonClickSTART(self):
+        self.presenter.gameStarted = True
+        self.presenter.clk.start()
+        # self.model.gameStarted = True
+        # self.Clock.start()
+        # print("Game has started")
+        return
+    def onButtonClick2(self):
+        text = self.presenter.connection.receive()
+        print(text)
+    def updateMoveLog(self, move_notation):
+        # Method to update the QTextEdit or QLineEdit with the move notation
+        current_text = self.text_field2.toPlainText()
+        new_text = f"{current_text}\n{move_notation}"  # Append the new move
+        self.text_field2.setText(new_text)  # For QLineEdit
+        # If you're using QTextEdit, you might prefer: self.text_field2.append(move_notation)
+    def updateLabel(self, text):
+        self.label.setText(text)
+    def updateTextField2(self, text):
+        # if self.insideTimer == 0:
+        #     return
+        # else:
+        #     text = self.model.returnFigurePositionToChessCordinates(self.model.last_moved_piece)
+        #     self.text_field2.setText(text)
+        #     self.insideTimer += 1
+        return
+    def readTextField(self):
+        text = self.text_field.text()
+        return text
+    def readIP(self):
+        text = self.textBoxIP.text()
+        self.textBoxIP.clear()
+        return text
+    def readPort(self):
+        text = self.textBoxPort.text()
+        self.textBoxPort.clear()
+        return text
+    def readRadioButton(self):
+        playerchoice = ""
+        if self.radioButtonAIbot.isChecked():
+            playerchoice = "AI bot"
+        elif self.radiobuttonPlayerSamePC.isChecked():
+            playerchoice = "Player same PC"
+        elif self.radiobuttonMultiplayer.isChecked():
+            playerchoice = "Multiplayer"
+
+        return playerchoice
+    def onButtonConifgAccept(self):
+        # if no radiobutton is selected
+        if self.text_field.text() == "":
+            # create message box that tell user that he has to choose game mode and enter player name
+            QMessageBox.about(self, "Error", "You have to enter player name first")
+            return
+        
+        if not self.radioButtonAIbot.isChecked() and not self.radiobuttonPlayerSamePC.isChecked() and not self.radiobuttonMultiplayer.isChecked():
+            QMessageBox.about(self, "Error", "You have to choose game mode first")
+            return
+        
+        # wait for program to connect to other player
+        # if multiplayer is selected
+
+
+        # Clear the window
+        self.close()
+        self.initMainUI()
+        return
+    def onButtonHost(self):
+        # create server
+        port = self.readPort()
+        ip = self.readIP()
+        self.presenter.createServer(int(port))
+    def onButtonJoin(self):
+        # create client
+        ip = self.readIP()
+        port = self.readPort()
+        self.presenter.joinServer(ip, int(port))
+    def updateLabelCurrentPlayerTurn(self, text):
+        if text == 'white':
+            self.labelCurrentPlayerTurn.setText("White player turn")
+        elif text == 'black':
+            self.labelCurrentPlayerTurn.setText("Black player turn")
+
+    # Utility methods
+    # Methods that perform utility functions
+    def drawBoard(self):
+        light_color = QColor(173, 216, 230)  # Light blue
+        dark_color = QColor(0, 0, 139)       # Dark blue
+        for i in range(8):
+            for j in range(8):
+                rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
+                rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
+                self.scene.addItem(rect)
     def addPieces(self):
         for i in range(8):
             self.scene.addItem(ChessPiece("pieces/white/wpawn.svg", 80 * i, 80, 'white', 'pawn', self))
@@ -314,7 +501,6 @@ class MainWindow(QMainWindow):
         self.scene.addItem(ChessPiece("pieces/black/bqueen.svg", 240, 560, 'black', 'queen', self))
         self.scene.addItem(ChessPiece("pieces/white/wking.svg", 320, 0, 'white', 'king', self))
         self.scene.addItem(ChessPiece("pieces/black/bking.svg", 320, 560, 'black', 'king', self))
-
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key_Escape:
             self.close()
@@ -323,29 +509,63 @@ class MainWindow(QMainWindow):
             ip = self.readIP()
             port = self.readPort()
             print(f"Radiobutton: {radiobutton}, IP: {ip}, Port: {port}")
-
             self.presenter.saveMovesHistoryToXML(self.presenter.moves_history)
             self.presenter.saveGameInfoToFile(radiobutton, ip, port)
         elif event.key() == Qt.Key_B:
             game_mode, address, port = self.presenter.loadGameInfoFromFile()
             print(f"Game mode: {game_mode}, Address: {address}, Port: {port}")
+        elif event.key() == Qt.Key_C:
+            self.presenter.printMovesHistoryFromWhere()
+        elif event.key() == Qt.Key_P:
+            self.deleteAllPieces()
+            self.addPieces()
+            self.presenter.playHistoryOnScreen()
+        elif event.key() == Qt.Key_Enter:
+            text = self.readTextField()
+            name, x, y, prevX, prevY = self.presenter.convertGridCordinatesToTCPCordinates(text)
+            if self.presenter.model.canmove(name, prevX, prevY, x, y):
+                self.presenter.model.updateBoardState(name, prevX, prevY, x, y)
+                self.movePiece(prevX, prevY, x, y)
+
         super().keyPressEvent(event)
+    def deleteAllPieces(self):
+        for item in self.scene.items():
+            if isinstance(item, ChessPiece):
+                self.scene.removeItem(item)
+    def movePieceFromInsideProgram(self, prevX, prevY, x, y):
+        # search for the piece position
+        for item in self.scene.items():
+            if isinstance(item, ChessPiece):
+                if item.getPreviousPosition() == (prevX, prevY):
+                    item.setPos(x * 80, y * 80)
+                    self.scene.update()
+
+
+    def getUserScreenResolution(self):
+        return QApplication.desktop().screenGeometry().width(), QApplication.desktop().screenGeometry().height()
+
 
 class Presenter():
-    def __init__(self, clk):
+    def __init__(self):
 
-        self.clk = clk
+        self.clk = ClockThread(0, self)
         self.model = model(self)
         self.win = MainWindow(self)
+        self.connection = connection(self)
 
         self.moves_history = []
+        #only for lab 6...
+        self.moves_history_from_where = []
 
+        # game mechanics Variables
+        self.gameStarted = False
+        self.currentPlayer = 'white'
 
         self.createSQLbaseForMovesHistory()
 
+    # convertion methods
     def convertNumericalToGridCordinates(self, x, y):
         return x / 80, y / 80
-    
     def convertGridToChessCordinates(self, x, y, name):
         if name == 'rook':
             charachter = 'R'
@@ -362,14 +582,143 @@ class Presenter():
         else:
             charachter = ''
         
-        print(f"{charachter}{chr(97 + x)}{y + 1}")
+        # print(f"{charachter}{chr(97 + x)}{y + 1}")
 
         return f"{charachter}{chr(97 + x)}{y + 1}"
+    def convertChessCordinatesToGrid(self, move_notation):
+        
+        if len(move_notation) == 2:
+            name = 'pawn'
+            x = ord(move_notation[0]) - 97
+            y = int(move_notation[1]) - 1
+        elif len(move_notation) == 3:
+            if move_notation[0] == 'R':
+                name = 'rook'
+            elif move_notation[0] == 'N':
+                name = 'knight'
+            elif move_notation[0] == 'B':
+                name = 'bishop'
+            elif move_notation[0] == 'Q':
+                name = 'queen'
+            elif move_notation[0] == 'K':
+                name = 'king'
+            x = ord(move_notation[1]) - 97
+            y = int(move_notation[2]) - 1
 
+        return name, x, y
+    def convertGridCordinatesToTCPCordinates(self, name, x, y, prevX, prevY):
+        if name == 'pawn':
+            charachter = 'P'
+        elif name == 'rook':
+            charachter = 'R'
+        elif name == 'knight':
+            charachter = 'N'
+        elif name == 'bishop':
+            charachter = 'B'
+        elif name == 'queen':
+            charachter = 'Q'
+        elif name == 'king':
+            charachter = 'K'
+
+        text = f"{charachter}{prevX}{prevY}{x}{y}"
+
+        return text
+    def convertTCPCordinatesToGridCordinates(self, text):
+        if text[0] == 'P':
+            name = 'pawn'
+        elif text[0] == 'R':
+            name = 'rook'
+        elif text[0] == 'N':
+            name = 'knight'
+        elif text[0] == 'B':
+            name = 'bishop'
+        elif text[0] == 'Q':
+            name = 'queen'
+        elif text[0] == 'K':
+            name = 'king'
+
+        prevX = int(text[1])
+        prevY = int(text[2])
+        x = int(text[3])
+        y = int(text[4])
+        print(name, x, y, prevX, prevY)
+
+        return name, x, y, prevX, prevY
+
+    # mechanic methods
+    def summarizeSelfMove(self, name, x, y, prevX, prevY):
+        if self.gameStarted == True:
+            #check if the move is possible
+            if self.model.canMove(name, prevX, prevY, x, y):
+                # if true update the board state and move piece
+                self.model.updateBoardState(name, prevX, prevY, x, y)
+                self.movePiece(prevX, prevY, x, y)
+                text = self.convertGridCordinatesToTCPCordinates(name, x, y, prevX, prevY)
+                self.send(text)
+
+                self.updateCurrentPlayerTurn()
+                self.win.updateLabelCurrentPlayerTurn(self.currentPlayer)
+
+                self.win.scene.update()
+                self.win.scene.update()
+                return True
+            else:
+                return False
+        else:
+            return False
+    def summarizeOtherPlayeMove(self, text):
+        name, x, y, prevX, prevY = self.convertTCPCordinatesToGridCordinates(text)
+        if self.gameStarted == True:
+            self.model.updateBoardState(name, prevX, prevY, x, y)
+            self.movePiece(prevX, prevY, x, y)
+            self.updateCurrentPlayerTurn()
+            self.win.updateLabelCurrentPlayerTurn(self.currentPlayer)
+            self.win.scene.update()
+
+
+    # updating methods
     def updateMovesHistory(self, move_notation):
         self.moves_history.append(move_notation)
         self.win.updateMoveLog(move_notation)
+    def updateSQLbase(self, move_notation):
+        # Establish a connection to the database
+        conn = sqlite3.connect('chess.db')
 
+        # Create a cursor object to execute SQL queries
+        c = conn.cursor()
+
+        # Insert the move notation into the 'moves_history' table
+        c.execute('INSERT INTO moves_history VALUES (?)', (move_notation,))
+
+        # Commit changes to the database
+        conn.commit()
+
+        # Close the connection when done with all database operations
+        conn.close()
+    def updateCurrentPlayerTurn(self):
+        if self.currentPlayer == 'white':
+            self.currentPlayer = 'black'
+        else:
+            self.currentPlayer = 'white'
+
+    # TCP/IP communication methods
+    def createServer(self, port):
+        self.connection.createServer(port)
+        # see if there is a connection
+        self.connection.start()
+    def joinServer(self, ip, port):
+        self.connection.joinServer(ip, port)
+        self.connection.start()
+    def send(self, data):
+        self.connection.send(data)
+
+    # utility methods
+    def movePiece(self, prevX, prevY, x, y):
+        self.win.movePieceFromInsideProgram(prevX, prevY, x, y)
+
+    # debug methods
+    def printMovesHistoryFromWhere(self):
+        print(self.moves_history_from_where)
     def createSQLbaseForMovesHistory(self):
         self.deleteExistingDataBaseDEBBUG()
 
@@ -393,30 +742,12 @@ class Presenter():
 
         # Close the connection when done with all database operations
         conn.close()
-
-    def updateSQLbase(self, move_notation):
-        # Establish a connection to the database
-        conn = sqlite3.connect('chess.db')
-
-        # Create a cursor object to execute SQL queries
-        c = conn.cursor()
-
-        # Insert the move notation into the 'moves_history' table
-        c.execute('INSERT INTO moves_history VALUES (?)', (move_notation,))
-
-        # Commit changes to the database
-        conn.commit()
-
-        # Close the connection when done with all database operations
-        conn.close()
-
     def deleteExistingDataBaseDEBBUG(self):
         conn = sqlite3.connect('chess.db')
         c = conn.cursor()
         c.execute('DROP TABLE moves_history')
         conn.commit()
         conn.close()
- 
     def saveMovesHistoryToXML(self, moves_history):
         # Create the root element for the XML document
         root = ET.Element("MovesHistory")
@@ -436,7 +767,6 @@ class Presenter():
 
         # Close the file
         xml_file.close()
-
     def saveGameInfoToFile(self, game_mode, address, port, filename="game_info.json"):
         # Create a dictionary to store the game information
         game_info = {
@@ -467,7 +797,18 @@ class Presenter():
         except (FileNotFoundError, json.JSONDecodeError):
             print(f"Error loading game info from file: {filename}")
             return None, None, None
-        
+    def playHistoryOnScreen(self):
+        while len(self.moves_history) > 0:
+            name, newx, newy = self.convertChessCordinatesToGrid(self.moves_history.pop(0))
+            name, prevX, prevY = self.convertChessCordinatesToGrid(self.moves_history_from_where.pop(0))
+            print(self.moves_history_from_where)
+            print(self.moves_history)
+            print(f"Moving {name} from {prevX}, {prevY} to {newx}, {newy}")
+            self.win.movePieceFromInsideProgram(prevX, prevY, newx, newy)
+
+            time.sleep(1)
+
+
 
 class ChessPiece(QGraphicsSvgItem):
     def __init__(self, svg_path, x, y, color, name, win):
@@ -480,6 +821,7 @@ class ChessPiece(QGraphicsSvgItem):
         self.hasMoved = False
         self.PrevX = x
         self.PrevY = y
+        self.svg_path = svg_path
 
         self.setPos(x, y)
         self.setScale(self.defaultScale)
@@ -489,21 +831,30 @@ class ChessPiece(QGraphicsSvgItem):
     def pos(self):
         return self.x, self.y
     
-    def PreviousPosition(self):
-        return self.PrevX, self.PrevY
+    def getPreviousPosition(self):
+        return round(self.PrevX // 80), round(self.PrevY // 80)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.setScale(self.defaultScale)
 
         newx, newy = self.convertNumericalToGridCordinates(self.x(), self.y())
         PrevX, PrevY = self.convertNumericalToGridCordinates(self.PrevX, self.PrevY)
-        if self.win.presenter.model.canMove(self.Name, self.PrevX, self.PrevY, newx, newy) and newx >= 0 and newx < 8 and newy >= 0 and newy < 8:
-            self.win.presenter.model.updateBoardState(self.Name, PrevX, PrevY, newx, newy)
-            self.win.presenter.updateSQLbase(self.win.presenter.convertGridToChessCordinates(newx, newy, self.Name))
-            self.win.presenter.updateMovesHistory(self.win.presenter.convertGridToChessCordinates(newx, newy, self.Name))
-            self.setPos(newx * 80, newy * 80)
-        else:
+        if self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY) == True:
+            self.PrevX = newx
+            self.PrevY = newy
+        elif self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY) == False:
             self.setPos(self.PrevX, self.PrevY)
+        # if self.win.presenter.model.canMove(self.Name, self.PrevX, self.PrevY, newx, newy) and newx >= 0 and newx < 8 and newy >= 0 and newy < 8:
+        #     self.win.presenter.model.updateBoardState(self.Name, PrevX, PrevY, newx, newy)
+        #     self.win.presenter.updateSQLbase(self.win.presenter.convertGridToChessCordinates(newx, newy, self.Name))
+        #     self.win.presenter.updateMovesHistory(self.win.presenter.convertGridToChessCordinates(newx, newy, self.Name))
+        #     self.win.presenter.moves_history_from_where.append(self.win.presenter.convertGridToChessCordinates(PrevX, PrevY, self.Name))
+        #     self.setPos(newx * 80, newy * 80)
+        #     text = self.win.presenter.convertGridCordinatesToTCPCordinates(self.Name, newx, newy, PrevX, PrevY)
+        #     self.win.presenter.send(text)
+        #     # print(newx*80, newy*80)
+        # else:
+        #     self.setPos(self.PrevX, self.PrevY)
         super().mouseReleaseEvent(event)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -517,7 +868,6 @@ class ChessPiece(QGraphicsSvgItem):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    clk = ClockThread(0)
-    Presenter = Presenter(clk)
+    Presenter = Presenter()
 
     sys.exit(app.exec_())
