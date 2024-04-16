@@ -19,10 +19,15 @@
 
 # deleting branch
 
+#msg avaible in the connection
+# waiting - waiting for the other player to connect
+# connectionConfirmed - connection has been confirmed
+# {name} {from x,y} {to x,y} - move notation
+
 from PyQt5.QtWidgets import QApplication, QRadioButton, QGraphicsSceneMouseEvent, QMessageBox, QWidget, QMainWindow, QPushButton, QLabel,  QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsItem, QLineEdit, QTextEdit
 from PyQt5.QtSvg import QGraphicsSvgItem
 from PyQt5.QtGui import QBrush, QColor, QFont, QKeyEvent, QTextOption
-from PyQt5.QtCore import QObject, Qt, QThread
+from PyQt5.QtCore import QObject, Qt, QThread, pyqtSignal
 import numpy as np
 import sqlite3
 import sys
@@ -38,7 +43,9 @@ import select
 # Variables that are used across multiple functions
 ProgramName = "Chess Game by Maksymilian Anzulewicz Beta 0.2"
 
+
 class connection(QThread):
+    signal = pyqtSignal(str)
     def __init__(self, presenter):
         super().__init__()
         self.presenter = presenter
@@ -56,21 +63,29 @@ class connection(QThread):
             if self.isServer:
                 if self.conn == None:
                     self.conn, self.addr = self.server.accept()
-                # wait for msg of move from other player
-                dataServer = self.receive()
-                print(dataServer)
-                # encode data back to string
-                dataServer = dataServer.decode('utf-8')
-                if not dataServer == '':
-                    self.presenter.summarizeOtherPlayeMove(dataServer)
-                    print(dataServer)
+                dataFromClient = self.receive()
+                dataFromClient = dataFromClient.decode('utf-8')
+                print(dataFromClient)
+                if len(dataFromClient) == 5:
+                    self.presenter.summarizeOtherPlayeMove(dataFromClient)
+                elif dataFromClient == 'waiting':
+                    self.presenter.connectionHandling("waiting", "server")
+                    self.send("connectionConfirmed")
             elif self.isClient:
-                dataClient = self.receive()
-                print(dataClient)
-                dataClient = dataClient.decode('utf-8')    
-                if not dataClient == '':
-                    self.presenter.summarizeOtherPlayeMove(dataClient)
-                    print(dataClient)
+                dataFromServer = self.receive()
+                dataFromServer = dataFromServer.decode('utf-8') 
+                print(dataFromServer)
+                if len(dataFromServer) == 5:
+                    self.presenter.summarizeOtherPlayeMove(dataFromServer)
+                elif dataFromServer == 'connectionConfirmed':
+                    self.presenter.connectionHandling("connectionConfirmed", "client")
+                elif dataFromServer == '10minutes':
+                    self.presenter.time = 600
+                elif dataFromServer == '1minute':
+                    self.presenter.time = 60
+                elif dataFromServer == 'gameStarted':
+                    self.signal.emit("Multiplayer")
+
 
             time.sleep(1)
     def createServer(self, port):
@@ -80,7 +95,6 @@ class connection(QThread):
         self.isServer = True
         self.isClient = False
         self.port = port
-        print(f"Server has been created on port {port}") 
     def joinServer(self, ip, port):
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.connect((ip, port))
@@ -88,7 +102,6 @@ class connection(QThread):
         self.port = port
         self.isClient = True
         self.isServer = False
-        print(f"Client has been created on ip {ip} and port {port}") 
     def closeConnection(self):
         if self.isServer:
             self.conn.close()
@@ -109,7 +122,6 @@ class connection(QThread):
             return self.conn.recv(1024)
         elif self.isClient:
             return self.client.recv(1024)
-
 
 class ClockThread(QThread):
     def __init__(self, timeAmount, presenter):
@@ -196,59 +208,62 @@ class MainWindow(QMainWindow):
         # variable containing the screen resolution of the user
         self.ScrResWidtth, self.ScrResHeight = self.getUserScreenResolution()
 
-
         self.initConfigUI()
 
     # initUI methods
     # Methods that initialize the user interface
     def initMainUI(self):
+        self.close()
         self.setWindowTitle(ProgramName)
-        #move window to left top corner
-        self.move(0, 0)
-        # self.setFixedSize(self.ScrResWidtth, self.ScrResHeight)
-        self.setFixedSize(900, 700)
+        self.setFixedSize(900, 692)
 
         # creating scene and view for chess board
         self.scene = QGraphicsScene(self)
         self.scene.setSceneRect(0, 0, 640, 640)
         self.view = QGraphicsView(self)
-        self.view.setGeometry(0, 0, 642, 642)
+        self.view.setGeometry(0, 50, 642, 642)
         self.view.setScene(self.scene)
 
         self.drawBoard()
         self.addPieces()
 
-        # creates buttons, text fields and labels
-        self.createButtonSTART(700, 20, 'START')
-        self.createButton(700, 50, '2')
-        self.createButtonTime1(700, 120, 'Time 10 min')
-        self.createButtonTime2(700, 150, 'Time 1 min')
-        self.createlabel(710, 80, 110, 40, "00:00")
-        self.createTextField(700, 250, 180, 50)
-        self.createTextField2(700, 320, 180, 300)
-        self.createLabelCurrentPlayerTurn(700, 630, 180, 20, self.presenter.currentPlayer)
+        self.createTextField2(652, 200, 240, 485)
+        self.createLabelCurrentPlayerTurn(660, 15, 250, 25, "White player turn")
+        self.createLabelIsThereCheck(660, 50, 250, 25, "No check")
+        self.createLabelWhiteTime(95, 11, 82, 20, "10:00")
+        self.createLabelWhiteTimeText(10, 10, 80, 20, "White:")
+        self.createLabelBlackTime(565, 11, 82, 20, "10:00")
+        self.createLabelBlackTimeText(485, 10, 80, 20, "Black:")
 
         self.show()
     def initConfigUI(self):
         self.setWindowTitle(ProgramName)
         winHeight = round(self.ScrResHeight / 2)
         winWidth = round(self.ScrResWidtth / 3)
-        print(f"Width: {winWidth}, Height: {winHeight}")
 
-        controlsWidth = 270
-        controlsHeight = 30
-
-
+        controlsWidth = round((winHeight / 2) - 10)
+        controlsHeight = 10
         self.setFixedSize(winWidth, winHeight)
-        self.createlabel(controlsWidth, controlsHeight, 120, 50, "Player name:", 12)
-        self.createTextField(controlsWidth, controlsHeight + 50, 120, 30)
+
         self.createRadioButtons(controlsWidth, controlsHeight + 100, 20, 20)
         self.createLabelsForRadioButtons(controlsWidth + 20, controlsHeight + 100, 120, 20, "AI bot", "Player same PC", "Multiplayer")
-        self.createTextBoxesForIPandPort(controlsWidth, controlsHeight + 200, 120, 20)
-        self.createLabelsForIPandPort(controlsWidth + 125, controlsHeight + 200, 80, 20, "IP", "Port")
-        self.createButtonConfigAccept(controlsWidth, controlsHeight + 282, 100, 30, "Accept")
-        self.createButtonsForHostorJoin(controlsWidth, controlsHeight + 250)
+        
+        self.createButtonsForHostorJoin(controlsWidth, controlsHeight + 200)
+        self.createTextBoxesForIPandPort(controlsWidth, controlsHeight + 250, 120, 20)
+        self.createLabelsForIPandPort(controlsWidth + 125, controlsHeight + 250, 80, 20, "IP", "Port")
+        
+        self.createButtonConfigAccept(controlsWidth, controlsHeight + 322, 100, 30, "Start game")
+        self.createLabelConnectionStatus(controlsWidth, controlsHeight + 350, 200, 40, "Connection status: Not connected")
+        self.createButtonJoinServer(controlsWidth, controlsHeight + 300, "Join server")
+        self.createButtonCreateServer(controlsWidth, controlsHeight + 300, "Create server")
 
+        self.createButtonTime1(controlsWidth + 150, controlsHeight + 180, "10 minutes")
+        self.createButtonTime2(controlsWidth + 150, controlsHeight + 210, "1 minute") 
+        self.createLabelTimeSettings(controlsWidth + 150, controlsHeight + 160, 100, 20, "Choose time")
+
+        self.hideAcceptButton()
+        self.hideMultiplayerSettings()
+        self.hideTimeSettings()
 
         self.show()
 
@@ -265,15 +280,15 @@ class MainWindow(QMainWindow):
         button.clicked.connect(self.onButtonClick2)
         button.resize(100, 30)
     def createButtonTime1(self, x, y, text):
-        button = QPushButton(text, self)
-        button.move(x, y)
-        button.clicked.connect(self.onTimeButtonClick1)
-        button.resize(100, 30)
+        self.buttonTime1 = QPushButton(text, self)
+        self.buttonTime1.move(x, y)
+        self.buttonTime1.clicked.connect(self.onTimeButtonClick1)
+        self.buttonTime1.resize(100, 30)
     def createButtonTime2(self, x, y, text):
-        button = QPushButton(text, self)
-        button.move(x, y)
-        button.clicked.connect(self.onTimeButtonClick2)
-        button.resize(100, 30)
+        self.buttonTime2 = QPushButton(text, self)
+        self.buttonTime2.move(x, y)
+        self.buttonTime2.clicked.connect(self.onTimeButtonClick2)
+        self.buttonTime2.resize(100, 30)
     def createWindowContainer(self, x, y, width, height, text):
         self.windowContainer = QWidget(self)
         self.windowContainer.setGeometry(x, y, width, height)
@@ -299,14 +314,17 @@ class MainWindow(QMainWindow):
         self.radioButtonAIbot = QRadioButton(self)
         self.radioButtonAIbot.move(x, y)
         self.radioButtonAIbot.resize(width, height)
+        self.radioButtonAIbot.clicked.connect(self.onRadioButtonAIbot)
 
         self.radiobuttonPlayerSamePC = QRadioButton(self)
         self.radiobuttonPlayerSamePC.move(x, y + 30)
         self.radiobuttonPlayerSamePC.resize(width, height)
+        self.radiobuttonPlayerSamePC.clicked.connect(self.onRadioButtonPlayerSamePC)
 
         self.radiobuttonMultiplayer = QRadioButton(self)
         self.radiobuttonMultiplayer.move(x, y + 60)
         self.radiobuttonMultiplayer.resize(width, height)
+        self.radiobuttonMultiplayer.clicked.connect(self.onRadioButtonMultiplayer)
     def createLabelsForRadioButtons(self, x, y, width, height, text1, text2, text3):
         self.labelAIbot = QLabel(self)
         self.labelAIbot.setText(text1)
@@ -346,34 +364,89 @@ class MainWindow(QMainWindow):
         button.clicked.connect(self.onButtonClick2)
         button.resize(100, 30)
     def createButtonConfigAccept(self, x, y, width, height, text):
-        button = QPushButton(text, self)
-        button.move(x, y)
-        button.clicked.connect(self.onButtonConifgAccept)
-        button.resize(width, height)
+        self.buttonAccept = QPushButton(text, self)
+        self.buttonAccept.move(x, y)
+        self.buttonAccept.clicked.connect(self.onButtonConifgAccept)
+        self.buttonAccept.resize(width, height)
     def drawBoard(self):
         light_color = QColor(173, 216, 230)  # Light blue
         dark_color = QColor(0, 0, 139)       # Dark blue
+        # draw board wth 8x8 squares light and dark colors and add it to scene plus move y by 50 to make space for buttons
         for i in range(8):
             for j in range(8):
                 rect = QGraphicsRectItem(80 * j, 80 * i, 80, 80)
                 rect.setBrush(QBrush(light_color if (i + j) % 2 == 0 else dark_color))
                 self.scene.addItem(rect)
     def createButtonsForHostorJoin(self, x, y):
-        buttonHost = QPushButton("Host", self)
-        buttonHost.move(x, y)
-        buttonHost.clicked.connect(self.onButtonHost)
-        buttonHost.resize(50, 30)
+        self.buttonHost = QPushButton("Host", self)
+        self.buttonHost.move(x, y)
+        self.buttonHost.clicked.connect(self.onButtonHost)
+        self.buttonHost.resize(50, 30)
 
-        buttonJoin = QPushButton("Join", self)
-        buttonJoin.move(x + 52, y)
-        buttonJoin.clicked.connect(self.onButtonJoin)
-        buttonJoin.resize(50, 30)
+        self.buttonJoin = QPushButton("Join", self)
+        self.buttonJoin.move(x + 52, y)
+        self.buttonJoin.clicked.connect(self.onButtonJoin)
+        self.buttonJoin.resize(50, 30)
     def createLabelCurrentPlayerTurn(self, x, y, width, height, text):
         self.labelCurrentPlayerTurn = QLabel(self)
         self.labelCurrentPlayerTurn.setText(text)
         self.labelCurrentPlayerTurn.move(x, y)
         self.labelCurrentPlayerTurn.resize(width, height)
-
+        self.labelCurrentPlayerTurn.setFont(QFont("Arial", 14))
+        self.labelCurrentPlayerTurn.setStyleSheet("color: Blue; font-weight: bold;")
+    def createLabelWhiteTime(self, x, y, width, height, text):
+        self.labelWhiteTime = QLabel(self)
+        self.labelWhiteTime.setText(text)
+        self.labelWhiteTime.move(x, y)
+        self.labelWhiteTime.resize(width, height)
+        self.labelWhiteTime.setFont(QFont("Arial", 16))
+    def createLabelBlackTime(self, x, y, width, height, text):
+        self.labelBlackTime = QLabel(self)
+        self.labelBlackTime.setText(text)
+        self.labelBlackTime.move(x, y)
+        self.labelBlackTime.resize(width, height)
+        self.labelBlackTime.setFont(QFont("Arial", 16))
+    def createLabelWhiteTimeText(self, x, y, width, height, text):
+        self.labelWhiteTimeText = QLabel(self)
+        self.labelWhiteTimeText.setText(text)
+        self.labelWhiteTimeText.move(x, y)
+        self.labelWhiteTimeText.resize(width, height)
+        self.labelWhiteTimeText.setFont(QFont("Arial", 16))
+    def createLabelBlackTimeText(self, x, y, width, height, text):
+        self.labelBlackTimeText = QLabel(self)
+        self.labelBlackTimeText.setText(text)
+        self.labelBlackTimeText.move(x, y)
+        self.labelBlackTimeText.resize(width, height)
+        self.labelBlackTimeText.setFont(QFont("Arial", 16))
+    def createLabelIsThereCheck(self, x, y, width, height, text):
+        self.labelIsThereCheck = QLabel(self)
+        self.labelIsThereCheck.setText(text)
+        self.labelIsThereCheck.move(x, y)
+        self.labelIsThereCheck.resize(width, height)
+        self.labelIsThereCheck.setFont(QFont("Arial", 14))
+    def createButtonCreateServer(self, x, y, text):
+        self.buttonServer = QPushButton(text, self)
+        self.buttonServer.move(x, y)
+        self.buttonServer.clicked.connect(self.onButtonCreateServer)
+        self.buttonServer.resize(100, 30)
+    def createLabelConnectionStatus(self, x, y, width, height, text):
+        self.labelConnectionStatus = QLabel(self)
+        self.labelConnectionStatus.setText(text)
+        self.labelConnectionStatus.move(x, y)
+        self.labelConnectionStatus.resize(width, height)
+        self.labelConnectionStatus.setFont(QFont("Arial", 8))
+        self.labelConnectionStatus.setWordWrap(True)
+    def createButtonJoinServer(self, x, y, text):
+        self.buttonJoinServer = QPushButton(text, self)
+        self.buttonJoinServer.move(x, y)
+        self.buttonJoinServer.clicked.connect(self.onButtonJoinServer)
+        self.buttonJoinServer.resize(100, 30)
+    def createLabelTimeSettings(self, x, y, width, height, text):
+        self.labelTimeSettings = QLabel(self)
+        self.labelTimeSettings.setText(text)
+        self.labelTimeSettings.move(x, y)
+        self.labelTimeSettings.resize(width, height)
+        self.labelTimeSettings.setFont(QFont("Arial", 8))
 
     # info windows methods
     def createInfoWindow(self, text):
@@ -384,11 +457,13 @@ class MainWindow(QMainWindow):
     # Widget event methods
     # Methods that handle widget events
     def onTimeButtonClick1(self):
-        self.Clock.set(600)
-        self.updateLabel("10:00")
+        self.presenter.time = 600
+        self.writeTextToLabelTimeSettings("10 minutes")
+        self.presenter.send("10minutes")
     def onTimeButtonClick2(self):
-        self.Clock.set(60)
-        self.updateLabel("01:00")
+        self.presenter.time = 60
+        self.writeTextToLabelTimeSettings("1 minute")
+        self.presenter.send("1minute")
     def onButtonClickSTART(self):
         self.presenter.gameStarted = True
         self.presenter.clk.start()
@@ -397,8 +472,7 @@ class MainWindow(QMainWindow):
         # print("Game has started")
         return
     def onButtonClick2(self):
-        text = self.presenter.connection.receive()
-        print(text)
+        self.presenter.clk.start()
     def updateMoveLog(self, move_notation):
         # Method to update the QTextEdit or QLineEdit with the move notation
         current_text = self.text_field2.toPlainText()
@@ -420,11 +494,9 @@ class MainWindow(QMainWindow):
         return text
     def readIP(self):
         text = self.textBoxIP.text()
-        self.textBoxIP.clear()
         return text
     def readPort(self):
         text = self.textBoxPort.text()
-        self.textBoxPort.clear()
         return text
     def readRadioButton(self):
         playerchoice = ""
@@ -437,40 +509,90 @@ class MainWindow(QMainWindow):
 
         return playerchoice
     def onButtonConifgAccept(self):
-        # if no radiobutton is selected
-        if self.text_field.text() == "":
-            # create message box that tell user that he has to choose game mode and enter player name
-            QMessageBox.about(self, "Error", "You have to enter player name first")
-            return
-        
-        if not self.radioButtonAIbot.isChecked() and not self.radiobuttonPlayerSamePC.isChecked() and not self.radiobuttonMultiplayer.isChecked():
-            QMessageBox.about(self, "Error", "You have to choose game mode first")
-            return
-        
-        # wait for program to connect to other player
-        # if multiplayer is selected
-
-
-        # Clear the window
-        self.close()
+        self.presenter.startGame(self.readRadioButton())
         self.initMainUI()
-        return
+
     def onButtonHost(self):
-        # create server
-        port = self.readPort()
-        ip = self.readIP()
-        self.presenter.createServer(int(port))
+        self.showHostServerSettings()
+        self.presenter.iswho = "server"
     def onButtonJoin(self):
-        # create client
-        ip = self.readIP()
-        port = self.readPort()
-        self.presenter.joinServer(ip, int(port))
+        self.showClientServerSettings()
+        self.presenter.iswho = "client"
     def updateLabelCurrentPlayerTurn(self, text):
         if text == 'white':
             self.labelCurrentPlayerTurn.setText("White player turn")
         elif text == 'black':
             self.labelCurrentPlayerTurn.setText("Black player turn")
+    def onRadioButtonMultiplayer(self):
+        if self.radiobuttonMultiplayer.isChecked():
+            self.hideAcceptButton()
+            self.showMultiplayerButtons()
+            self.showTimeSettings()
+    def onRadioButtonAIbot(self):
+        if self.radioButtonAIbot.isChecked():
+            self.hideMultiplayerSettings()
+            self.hideAcceptButton()
+            QMessageBox.about(self, "Info", "AI bot mode is not available yet")         
+    def onRadioButtonPlayerSamePC(self):
+        # jeśli wciśnięty pokaż accpet button jeśli nie to schowaj
+        if self.radioButtonPlayerSamePC.isChecked() and self.radioButtonAIbot.isChecked() == False and self.radiobuttonMultiplayer.isChecked() == False:
+            self.hideMultiplayerSettings()
+            self.showAcceptButton()
+            self.showTimeSettings()
+    def onButtonCreateServer(self):
+        QMessageBox.about(self, "Info", f"Server has been created on port {self.readPort()} and your IP is {self.readIP()} wait for connection from other player")
+        self.presenter.createServer(int(self.readPort()))
+    def writeTextToLabelConnectionStatus(self, text):
+        self.labelConnectionStatus.setText(text)
+    def onButtonJoinServer(self):
+        ip = self.readIP()
+        port = self.readPort()
+        self.presenter.joinServer(ip, int(port))
+        self.labelConnectionStatus.setText("Connection status: waitng for server confirmation")
+    def writeTextToLabelTimeSettings(self, text):
+        self.labelTimeSettings.setText(text)
 
+    # Widget visibility methods
+    def hideAcceptButton(self):
+        self.buttonAccept.hide()
+    def showAcceptButton(self):
+        self.buttonAccept.show()
+    def hideMultiplayerSettings(self):
+        self.buttonHost.hide()
+        self.buttonJoin.hide()
+        self.labelIP.hide()
+        self.labelPort.hide()
+        self.textBoxIP.hide()
+        self.textBoxPort.hide()
+        self.buttonServer.hide()
+        self.labelConnectionStatus.hide()
+        self.buttonJoinServer.hide()
+    def showMultiplayerButtons(self):
+        self.buttonHost.show()
+        self.buttonJoin.show()
+    def showHostServerSettings(self):
+        self.labelIP.show()
+        self.labelPort.show()
+        self.buttonServer.show()
+        self.textBoxIP.show()
+        self.textBoxPort.show()
+        self.labelConnectionStatus.show()
+    def showClientServerSettings(self):
+        self.labelIP.show()
+        self.labelPort.show()
+        self.textBoxIP.show()
+        self.textBoxPort.show()
+        self.labelConnectionStatus.show()
+        self.buttonJoinServer.show()
+    def hideTimeSettings(self):
+        self.labelTimeSettings.hide()
+        self.buttonTime1.hide()
+        self.buttonTime2.hide()
+    def showTimeSettings(self):
+        self.labelTimeSettings.show()
+        self.buttonTime1.show()
+        self.buttonTime2.show()  
+   
     # Utility methods
     # Methods that perform utility functions
     def drawBoard(self):
@@ -484,7 +606,7 @@ class MainWindow(QMainWindow):
     def addPieces(self):
         for i in range(8):
             self.scene.addItem(ChessPiece("pieces/white/wpawn.svg", 80 * i, 80, 'white', 'pawn', self))
-            self.scene.addItem(ChessPiece("pieces/black/bpawn.svg", 80 * i, 480, 'black', 'pawn', self))
+            self.scene.addItem(ChessPiece("pieces/black/bpawn.svg", 80 * i, 480 , 'black', 'pawn', self))
 
         self.scene.addItem(ChessPiece("pieces/white/wrook.svg", 0, 0, 'white', 'rook', self))
         self.scene.addItem(ChessPiece("pieces/white/wrook.svg", 560, 0, 'white', 'rook', self))
@@ -539,8 +661,6 @@ class MainWindow(QMainWindow):
             if isinstance(item, ChessPiece):
                 if item.getPreviousPosition() == (prevX, prevY):
                     item.setPos(x * 80, y * 80)
-                    self.scene.update()
-
 
     def getUserScreenResolution(self):
         return QApplication.desktop().screenGeometry().width(), QApplication.desktop().screenGeometry().height()
@@ -548,6 +668,10 @@ class MainWindow(QMainWindow):
 
 class Presenter():
     def __init__(self):
+        # game mechanics Variables
+        self.gameStarted = True
+        self.currentPlayer = 'white'
+        self.time = None
 
         self.clk = ClockThread(0, self)
         self.model = model(self)
@@ -558,9 +682,12 @@ class Presenter():
         #only for lab 6...
         self.moves_history_from_where = []
 
-        # game mechanics Variables
-        self.gameStarted = False
-        self.currentPlayer = 'white'
+        # multiplayer configuration variables
+        self.iswho = None
+
+        self.connection.signal.connect(self.startGameSlot)
+
+
 
         self.createSQLbaseForMovesHistory()
 
@@ -654,13 +781,13 @@ class Presenter():
                 # if true update the board state and move piece
                 self.model.updateBoardState(name, prevX, prevY, x, y)
                 self.movePiece(prevX, prevY, x, y)
+
                 text = self.convertGridCordinatesToTCPCordinates(name, x, y, prevX, prevY)
                 self.send(text)
 
                 self.updateCurrentPlayerTurn()
                 self.win.updateLabelCurrentPlayerTurn(self.currentPlayer)
 
-                self.win.scene.update()
                 self.win.scene.update()
                 return True
             else:
@@ -672,10 +799,34 @@ class Presenter():
         if self.gameStarted == True:
             self.model.updateBoardState(name, prevX, prevY, x, y)
             self.movePiece(prevX, prevY, x, y)
+
             self.updateCurrentPlayerTurn()
             self.win.updateLabelCurrentPlayerTurn(self.currentPlayer)
             self.win.scene.update()
+    def startGame(self, game_mode):
+        if game_mode == 'AI bot':
+            # for now this mode is not available
+            pass
+        elif game_mode == 'Player same PC':
+            self.gameStarted = True
+            # ...
+        elif game_mode == 'Multiplayer':
+            if self.iswho == 'server':
+                self.gameStarted = True
+                self.send(f'Time{self.time}')
+                self.send('gameStarted')
+                self.clk.set(self.time)
+                self.win.initMainUI()
+            elif self.iswho == 'client':
+                self.gameStarted = True
+                self.clk.set(self.time)
+                self.win.initMainUI()
+                
 
+
+    # slots methods
+    def startGameSlot(self, game_mode):
+        self.startGame(game_mode)
 
     # updating methods
     def updateMovesHistory(self, move_notation):
@@ -705,13 +856,26 @@ class Presenter():
     # TCP/IP communication methods
     def createServer(self, port):
         self.connection.createServer(port)
-        # see if there is a connection
         self.connection.start()
     def joinServer(self, ip, port):
         self.connection.joinServer(ip, port)
         self.connection.start()
+        self.send('waiting')
     def send(self, data):
         self.connection.send(data)
+    def connectionHandling(self, msg, isWho = None):
+        
+        if len(msg) == 5 and isWho == None:
+            self.summarizeOtherPlayeMove(msg)
+        elif len(msg) != 5 and isWho != None:
+            if isWho == 'server':
+                if msg == 'waiting':
+                    self.win.writeTextToLabelConnectionStatus("Connection status: Client connected, waiting for start of the game")
+                    self.win.showAcceptButton()
+            elif isWho == 'client':
+                if msg == 'connectionConfirmed':
+                    self.win.writeTextToLabelConnectionStatus("Connection status: Server connected, waiting for host to start the game")
+
 
     # utility methods
     def movePiece(self, prevX, prevY, x, y):
@@ -721,7 +885,7 @@ class Presenter():
     def printMovesHistoryFromWhere(self):
         print(self.moves_history_from_where)
     def createSQLbaseForMovesHistory(self):
-        self.deleteExistingDataBaseDEBBUG()
+        #self.deleteExistingDataBaseDEBBUG()
 
         # Establish a connection to the database
         conn = sqlite3.connect('chess.db')
@@ -843,6 +1007,9 @@ class ChessPiece(QGraphicsSvgItem):
         if self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY) == True:
             self.PrevX = newx
             self.PrevY = newy
+
+            # render again the piece
+            self.renderer().load(self.svg_path)
         elif self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY) == False:
             self.setPos(self.PrevX, self.PrevY)
         # if self.win.presenter.model.canMove(self.Name, self.PrevX, self.PrevY, newx, newy) and newx >= 0 and newx < 8 and newy >= 0 and newy < 8:
@@ -862,6 +1029,7 @@ class ChessPiece(QGraphicsSvgItem):
         self.PrevX = self.x()
         self.PrevY = self.y()
         self.setScale(self.defaultScale + 0.2)
+        self.win.scene.update()
         super().mousePressEvent(event)
 
     def convertNumericalToGridCordinates(self, x, y):
@@ -870,5 +1038,4 @@ class ChessPiece(QGraphicsSvgItem):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     Presenter = Presenter()
-
     sys.exit(app.exec_())
