@@ -1,3 +1,0 @@
-killing task in terminal
-
-https://stackoverflow.com/questions/8688949/how-to-close-tcp-and-udp-ports-via-windows-command-line

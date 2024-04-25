@@ -3,11 +3,6 @@
 # 1
 # 2
 # ...
-# board in chess coordinates
-# a0 b  c  ...
-# 1
-# 2
-# ...
 
 # numerical vs grid cordinates vs chess cordinates
 # (for pawn x,y) 80, 160 -> 1, 2 -> b2
@@ -16,8 +11,6 @@
 # string = {name} {from x,y} {to x,y}
 # example: {p} {1,2} {1,3}
 # p - pawn, k-king, q-queen, r-rook, b-bishop, n-knight
-
-# deleting branch
 
 #msg avaible in the connection
 # waiting - waiting for the other player to connect
@@ -46,6 +39,7 @@ ProgramName = "Chess Game by Maksymilian Anzulewicz Beta 0.2"
 
 class connection(QThread):
     signal = pyqtSignal(str)
+    signalMsg = pyqtSignal(str)
     def __init__(self, presenter):
         super().__init__()
         self.presenter = presenter
@@ -65,15 +59,23 @@ class connection(QThread):
                     self.conn, self.addr = self.server.accept()
                 dataFromClient = self.receive()
                 dataFromClient = dataFromClient.decode('utf-8')
+
                 print(dataFromClient)
                 if len(dataFromClient) == 5:
                     self.presenter.summarizeOtherPlayeMove(dataFromClient)
                 elif dataFromClient == 'waiting':
                     self.presenter.connectionHandling("waiting", "server")
                     self.send("connectionConfirmed")
+                # jeśli 3 pierwsze litery wiadomości to msg to znaczy że to wiadomość od drugiego gracza
+                elif dataFromClient.find('msg') != -1:
+                    self.signalMsg.emit(dataFromClient)
+                dataFromClient = None
+            
+            
             elif self.isClient:
                 dataFromServer = self.receive()
                 dataFromServer = dataFromServer.decode('utf-8') 
+                
                 print(dataFromServer)
                 if len(dataFromServer) == 5:
                     self.presenter.summarizeOtherPlayeMove(dataFromServer)
@@ -85,7 +87,11 @@ class connection(QThread):
                     self.presenter.time = 60
                 elif dataFromServer == 'gameStarted':
                     self.signal.emit("Multiplayer")
+                # jeśli wiadomość zawiera msg w środku to znaczy że to wiadomość od drugiego gracza
+                elif dataFromServer.find('msg') != -1:
+                    self.signalMsg.emit(dataFromServer)
 
+                dataFromServer = None
 
             time.sleep(1)
     def createServer(self, port):
@@ -127,27 +133,36 @@ class ClockThread(QThread):
     def __init__(self, timeAmount, presenter):
         super().__init__()
         self.presenter = presenter
-        self.timeAmount = timeAmount
-        # self.model = model
-        # self.mainWindow = mainWindow
-        self.TimeAmount = 0
+        self.witchPlayer = 'white'
+        self.TimeAmountWhite = timeAmount
+        self.TimeAmountBlack = timeAmount
 
     def run(self):
         while True:
             time.sleep(1)
-            self.TimeAmount -= 1
-            self.presenter.win.updateLabel(self.convertTimeToString(self.TimeAmount))
-            self.presenter.win.scene.update()
-            if self.TimeAmount == 0:
-                print("Time is up")
+            if self.witchPlayer == 'white':
+                self.TimeAmountWhite -= 1
+                self.presenter.win.updateLabelWhiteTime(self.convertTimeToString(self.TimeAmountWhite))
+                self.presenter.win.scene.update()
+            elif self.witchPlayer == 'black':
+                self.TimeAmountBlack -= 1
+                self.presenter.win.updateLabelBlackTime(self.convertTimeToString(self.TimeAmountBlack))
+                self.presenter.win.scene.update()
     
     def set(self, timeAmount):
-        self.TimeAmount = timeAmount
+        self.TimeAmountWhite = timeAmount
+        self.TimeAmountBlack = timeAmount
 
     def convertTimeToString(self, timeAmount):
         minutes = timeAmount // 60
         seconds = timeAmount % 60
         return f"{minutes:02}:{seconds:02}"
+
+    def switchPlayer(self):
+        if self.witchPlayer == 'white':
+            self.witchPlayer = 'black'
+        elif self.witchPlayer == 'black':
+            self.witchPlayer = 'white'
 
 class model():
     def __init__(self, presenter):
@@ -156,23 +171,191 @@ class model():
         # create empty 2d array with 8x8 dimensions
         self.currentBoardState = [[0 for _ in range(8)] for _ in range(8)]
         
-
         self.initCurrentBoardState()
 
-    def canMove(self, name, prevX, prevY, x, y):
+    def canMove(self, name, prevX, prevY, x, y, color, hasMoved):
         # all cordinates here are in grid cordinates
-        # checking only if the move is possible then return True
+        ### checking only if the move is possible then return True otherwise False
+        
+        # color in this method is the color of the player that is moving the piece
+
+        # checking if the move is possible
         
         if self.currentBoardState[y][x] != 'empty':
+            # take only 5 first letters of self.currentBoardState[y][x] to get the color of the field so if there is string like 'whitepawn' it will take only 'white'
+            colorOfDestinationField = self.currentBoardState[y][x][0:5]         
+        else:
+            colorOfDestinationField = 'empty'
+        
+        
+        # na czas oddania
+        ##################################################################################
+        # beginnig with rules that aplly to all figures (rules that reject the move)
+        if colorOfDestinationField == color and colorOfDestinationField != 'empty':
             return False
+        elif (x < 0 | x > 8 ) or (y < 0 | y > 8):
+            return False
+        elif color != self.presenter.currentPlayer:
+            return False
+        
+        # rules that apply to specific figures
+        if name == 'pawn':
 
-        return True
+            # if its first move pawn can move 2 fields forward
+            if hasMoved == False:
+                # for white player
+                if color == 'white' and self.currentBoardState[y][x] == 'empty' and self.currentBoardState[y - 1][x] == 'empty':
+                    if x == prevX and prevY == y - 2:
+                        return True
+                elif color == 'black' and self.currentBoardState[y][x] == 'empty' and self.currentBoardState[y + 1][x] == 'empty':    
+                    # for black player
+                    if x == prevX and prevY == y + 2:
+                        return True
+            
+            # Pawn can move one field forward if the field is empty
+            if color == 'white' and self.currentBoardState[y][x] == 'empty':
+                if x == prevX and prevY == y - 1:
+                    return True
+            elif color == 'black' and self.currentBoardState[y][x] == 'empty':
+                if x == prevX and prevY == y + 1:
+                    return True
+                
+            # Pawn can move diagonally and capture a enemy piece if there is one
+            if color == 'white' and self.currentBoardState[y][x] != 'empty' and colorOfDestinationField == 'black':
+                if (x == prevX + 1 or x == prevX - 1) and y == prevY + 1:
+                    return True
+            elif color == 'black' and self.currentBoardState[y][x] != 'empty' and colorOfDestinationField == 'white':
+                if (x == prevX + 1 or x == prevX - 1) and y == prevY - 1:
+                    return True
+        elif name == 'rook':
+            # rook mechanics
+            # rook can move only in vertical or horizontal direction
+            if x == prevX:
+                # moving up
+                if y < prevY:
+                    for i in range(prevY - 1, y, -1):
+                        if self.currentBoardState[i][x] != 'empty':
+                            return False
+                    return True
+                # moving down
+                elif y > prevY:
+                    for i in range(prevY + 1, y):
+                        if self.currentBoardState[i][x] != 'empty':
+                            return False
+                    return True
+            elif y == prevY:
+                # moving left
+                if x < prevX:
+                    for i in range(prevX - 1, x, -1):
+                        if self.currentBoardState[y][i] != 'empty':
+                            return False
+                    return True
+                # moving right
+                elif x > prevX:
+                    for i in range(prevX + 1, x):
+                        if self.currentBoardState[y][i] != 'empty':
+                            return False
+                    return True
+        elif name == 'knight':
+            if (x == prevX + 1 and y == prevY + 2) or (x == prevX - 1 and y == prevY + 2) or (x == prevX + 1 and y == prevY - 2) or (x == prevX - 1 and y == prevY - 2) or (x == prevX + 2 and y == prevY + 1) or (x == prevX - 2 and y == prevY + 1) or (x == prevX + 2 and y == prevY - 1) or (x == prevX - 2 and y == prevY - 1):
+                return True
+        elif name == 'bishop':
+            if abs(x - prevX) == abs(y - prevY):
+                # moving up right
+                if x > prevX and y < prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY - i][prevX + i] != 'empty':
+                            return False
+                    return True
+                # moving up left
+                elif x < prevX and y < prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY - i][prevX - i] != 'empty':
+                            return False
+                    return True
+                # moving down right
+                elif x > prevX and y > prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY + i][prevX + i] != 'empty':
+                            return False
+                    return True
+                # moving down left
+                elif x < prevX and y > prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY + i][prevX - i] != 'empty':
+                            return False
+                    return True
+        elif name == 'queen':
+            if abs(x - prevX) == abs(y - prevY):
+                # moving up right
+                if x > prevX and y < prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY - i][prevX + i] != 'empty':
+                            return False
+                    return True
+                # moving up left
+                elif x < prevX and y < prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY - i][prevX - i] != 'empty':
+                            return False
+                    return True
+                # moving down right
+                elif x > prevX and y > prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY + i][prevX + i] != 'empty':
+                            return False
+                    return True
+                # moving down left
+                elif x < prevX and y > prevY:
+                    for i in range(1, abs(x - prevX)):
+                        if self.currentBoardState[prevY + i][prevX - i] != 'empty':
+                            return False
+                    return True
+            elif x == prevX:
+                # moving up
+                if y < prevY:
+                    for i in range(prevY - 1, y, -1):
+                        if self.currentBoardState[i][x] != 'empty':
+                            return False
+                    return True
+                # moving down
+                elif y > prevY:
+                    for i in range(prevY + 1, y):
+                        if self.currentBoardState[i][x] != 'empty':
+                            return False
+                    return True
+            elif y == prevY:
+                # moving left
+                if x < prevX:
+                    for i in range(prevX - 1, x, -1):
+                        if self.currentBoardState[y][i] != 'empty':
+                            return False
+                    return True
+                # moving right
+                elif x > prevX:
+                    for i in range(prevX + 1, x):
+                        if self.currentBoardState[y][i] != 'empty':
+                            return False
+                    return True
+        elif name == 'king':
+            if abs(x - prevX) == 1 and abs(y - prevY) == 1:
+                return True
+            elif abs(x - prevX) == 1 and y == prevY:
+                return True
+            elif abs(y - prevY) == 1 and x == prevX:
+                return True
+         
+        ##################################################################################
+
+
+
+
+
+        return False
     
-    def updateBoardState(self, name, prevX, prevY, x, y):
+    def updateBoardState(self, name, prevX, prevY, x, y, color):
         # all cordinates here are in grid cordinates
-        # update the board state after the move
-        # print(f"Moving {name} from {prevX}, {prevY} to {x}, {y}")
-        self.currentBoardState[y][x] = name
+        self.currentBoardState[y][x] = color + name
         self.currentBoardState[prevY][prevX] = 'empty'
     
     def initCurrentBoardState(self):
@@ -201,7 +384,41 @@ class model():
                 if self.currentBoardState[i][j] == 0:
                     self.currentBoardState[i][j] = 'empty'
 
+    # Bot methods
+    def findBestMoveForBot(self):
+
+        # iterate over all figures and check if the piece can capture enemy piece
+        for i in range(8):
+            for j in range(8):
+                if self.currentBoardState[i][j][0:5] == 'black':
+                    figureName = self.currentBoardState[i][j][5:]
+                    
+                    # iterate over all fields and check if the piece can capture enemy piece
+                    for k in range(8):
+                        for l in range(8):
+                            if self.currentBoardState[k][l][0:5] == 'white':
+                                if self.canMove(figureName, j, i, l, k, 'black', False):
+                                    return figureName, l, k, j, i
+                    
+                    # if there is no enemy piece to capture then move the piece to random field
+                    # make random move
+                    for k in range(8):
+                        for l in range(8):
+                            if self.canMove(figureName, j, i, l, k, 'black', False):
+                                return figureName, l, k, j, i
+        
+     
+        
+
+
+    # debuggin methods
+    def printCurrentBoardState(self):
+        for i in range(8):
+            print(self.currentBoardState[i])
+
+
 class MainWindow(QMainWindow):
+
     def __init__(self, presenter):
         super(MainWindow, self).__init__()
         self.presenter = presenter
@@ -235,6 +452,11 @@ class MainWindow(QMainWindow):
         self.createLabelBlackTime(565, 11, 82, 20, "10:00")
         self.createLabelBlackTimeText(485, 10, 80, 20, "Black:")
 
+        # communications with other player
+        self.createTextLabelCommunicationWithOtherPlayer(660, 100, 200, 25, "")
+
+
+        self.deleteAllButtonsFromInitConfigUI()
         self.show()
     def initConfigUI(self):
         self.setWindowTitle(ProgramName)
@@ -252,7 +474,6 @@ class MainWindow(QMainWindow):
         self.createTextBoxesForIPandPort(controlsWidth, controlsHeight + 250, 120, 20)
         self.createLabelsForIPandPort(controlsWidth + 125, controlsHeight + 250, 80, 20, "IP", "Port")
         
-        self.createButtonConfigAccept(controlsWidth, controlsHeight + 322, 100, 30, "Start game")
         self.createLabelConnectionStatus(controlsWidth, controlsHeight + 350, 200, 40, "Connection status: Not connected")
         self.createButtonJoinServer(controlsWidth, controlsHeight + 300, "Join server")
         self.createButtonCreateServer(controlsWidth, controlsHeight + 300, "Create server")
@@ -260,6 +481,8 @@ class MainWindow(QMainWindow):
         self.createButtonTime1(controlsWidth + 150, controlsHeight + 180, "10 minutes")
         self.createButtonTime2(controlsWidth + 150, controlsHeight + 210, "1 minute") 
         self.createLabelTimeSettings(controlsWidth + 150, controlsHeight + 160, 100, 20, "Choose time")
+
+        self.createButtonConfigAccept(controlsWidth, controlsHeight + 400, 100, 30, "Start game")
 
         self.hideAcceptButton()
         self.hideMultiplayerSettings()
@@ -316,10 +539,10 @@ class MainWindow(QMainWindow):
         self.radioButtonAIbot.resize(width, height)
         self.radioButtonAIbot.clicked.connect(self.onRadioButtonAIbot)
 
-        self.radiobuttonPlayerSamePC = QRadioButton(self)
-        self.radiobuttonPlayerSamePC.move(x, y + 30)
-        self.radiobuttonPlayerSamePC.resize(width, height)
-        self.radiobuttonPlayerSamePC.clicked.connect(self.onRadioButtonPlayerSamePC)
+        self.radioButtonPlayerSamePC = QRadioButton(self)
+        self.radioButtonPlayerSamePC.move(x, y + 30)
+        self.radioButtonPlayerSamePC.resize(width, height)
+        self.radioButtonPlayerSamePC.clicked.connect(self.onRadioButtonPlayerSamePC)
 
         self.radiobuttonMultiplayer = QRadioButton(self)
         self.radiobuttonMultiplayer.move(x, y + 60)
@@ -447,13 +670,18 @@ class MainWindow(QMainWindow):
         self.labelTimeSettings.move(x, y)
         self.labelTimeSettings.resize(width, height)
         self.labelTimeSettings.setFont(QFont("Arial", 8))
+    def createTextLabelCommunicationWithOtherPlayer(self, x, y, width, height, text):
+        self.labelCommunicationWithOtherPlayer = QTextEdit(self)
+        self.labelCommunicationWithOtherPlayer.setText(text)
+        self.labelCommunicationWithOtherPlayer.move(x, y)
+        self.labelCommunicationWithOtherPlayer.resize(width, height)
+        self.labelCommunicationWithOtherPlayer.setFont(QFont("Arial", 8))
 
     # info windows methods
     def createInfoWindow(self, text):
         QMessageBox.about(self, "Info", text)
         # set messagebox focus only
         
-
     # Widget event methods
     # Methods that handle widget events
     def onTimeButtonClick1(self):
@@ -502,7 +730,7 @@ class MainWindow(QMainWindow):
         playerchoice = ""
         if self.radioButtonAIbot.isChecked():
             playerchoice = "AI bot"
-        elif self.radiobuttonPlayerSamePC.isChecked():
+        elif self.radioButtonPlayerSamePC.isChecked():
             playerchoice = "Player same PC"
         elif self.radiobuttonMultiplayer.isChecked():
             playerchoice = "Multiplayer"
@@ -515,8 +743,10 @@ class MainWindow(QMainWindow):
     def onButtonHost(self):
         self.showHostServerSettings()
         self.presenter.iswho = "server"
+        self.showTimeSettings()
     def onButtonJoin(self):
         self.showClientServerSettings()
+        self.hideTimeSettings()
         self.presenter.iswho = "client"
     def updateLabelCurrentPlayerTurn(self, text):
         if text == 'white':
@@ -527,7 +757,6 @@ class MainWindow(QMainWindow):
         if self.radiobuttonMultiplayer.isChecked():
             self.hideAcceptButton()
             self.showMultiplayerButtons()
-            self.showTimeSettings()
     def onRadioButtonAIbot(self):
         if self.radioButtonAIbot.isChecked():
             self.hideMultiplayerSettings()
@@ -552,6 +781,18 @@ class MainWindow(QMainWindow):
     def writeTextToLabelTimeSettings(self, text):
         self.labelTimeSettings.setText(text)
 
+    def updateLabelWhiteTime(self, text):
+        self.labelWhiteTime.setText(text)
+    def updateLabelBlackTime(self, text):
+        self.labelBlackTime.setText(text)
+    def readCommunicationWithOtherPlayer(self):
+        return self.labelCommunicationWithOtherPlayer.toPlainText()
+    def writeCommunicationWithOtherPlayer(self, text):
+        # dodaj text do tego co jest już w polu
+        self.text_field2.setText(text)
+
+
+    
     # Widget visibility methods
     def hideAcceptButton(self):
         self.buttonAccept.hide()
@@ -592,7 +833,18 @@ class MainWindow(QMainWindow):
         self.labelTimeSettings.show()
         self.buttonTime1.show()
         self.buttonTime2.show()  
-   
+    def deleteAllButtonsFromInitConfigUI(self):
+        self.buttonHost.hide()
+        self.buttonJoin.hide()
+        self.buttonServer.hide()
+        self.buttonJoinServer.hide()
+        self.buttonTime1.hide()
+        self.buttonTime2.hide()
+        self.buttonAccept.hide()
+        self.radioButtonAIbot.hide()
+        self.radioButtonPlayerSamePC.hide()
+        self.radiobuttonMultiplayer.hide()
+
     # Utility methods
     # Methods that perform utility functions
     def drawBoard(self):
@@ -627,28 +879,15 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key_Escape:
             self.close()
-        elif event.key() == Qt.Key_A:
-            radiobutton = self.readRadioButton()
-            ip = self.readIP()
-            port = self.readPort()
-            print(f"Radiobutton: {radiobutton}, IP: {ip}, Port: {port}")
-            self.presenter.saveMovesHistoryToXML(self.presenter.moves_history)
-            self.presenter.saveGameInfoToFile(radiobutton, ip, port)
-        elif event.key() == Qt.Key_B:
-            game_mode, address, port = self.presenter.loadGameInfoFromFile()
-            print(f"Game mode: {game_mode}, Address: {address}, Port: {port}")
-        elif event.key() == Qt.Key_C:
-            self.presenter.printMovesHistoryFromWhere()
+        elif event.key() == Qt.Key_W:
+            msg = self.readCommunicationWithOtherPlayer()
+            self.writeCommunicationWithOtherPlayer("")
+            self.presenter.send(f"msg{msg}")
         elif event.key() == Qt.Key_P:
-            self.deleteAllPieces()
-            self.addPieces()
-            self.presenter.playHistoryOnScreen()
-        elif event.key() == Qt.Key_Enter:
-            text = self.readTextField()
-            name, x, y, prevX, prevY = self.presenter.convertGridCordinatesToTCPCordinates(text)
-            if self.presenter.model.canmove(name, prevX, prevY, x, y):
-                self.presenter.model.updateBoardState(name, prevX, prevY, x, y)
-                self.movePiece(prevX, prevY, x, y)
+            for item in self.scene.items():
+                if isinstance(item, ChessPiece):
+                    if item.color == 'black' and item.Name == 'pawn':
+                        print(f'{item.getPreviousPosition()} from {item.color}')
 
         super().keyPressEvent(event)
     def deleteAllPieces(self):
@@ -661,6 +900,15 @@ class MainWindow(QMainWindow):
             if isinstance(item, ChessPiece):
                 if item.getPreviousPosition() == (prevX, prevY):
                     item.setPos(x * 80, y * 80)
+    def removePieceFromBoard(self, x, y):
+        for item in self.scene.items():
+            if isinstance(item, ChessPiece):
+                if item.Name == 'pawn' and item.color == 'black':
+                    print(f'{item.getPreviousPosition()} from {item.color}')
+                
+                if item.getPreviousPosition() == (x, y):
+                    self.scene.removeItem(item)
+
 
     def getUserScreenResolution(self):
         return QApplication.desktop().screenGeometry().width(), QApplication.desktop().screenGeometry().height()
@@ -672,6 +920,7 @@ class Presenter():
         self.gameStarted = True
         self.currentPlayer = 'white'
         self.time = None
+        self.HumanPlayer = None
 
         self.clk = ClockThread(0, self)
         self.model = model(self)
@@ -686,8 +935,7 @@ class Presenter():
         self.iswho = None
 
         self.connection.signal.connect(self.startGameSlot)
-
-
+        self.connection.signalMsg.connect(self.reciveMsgFromOtherPlayer)
 
         self.createSQLbaseForMovesHistory()
 
@@ -774,13 +1022,19 @@ class Presenter():
         return name, x, y, prevX, prevY
 
     # mechanic methods
-    def summarizeSelfMove(self, name, x, y, prevX, prevY):
+    def summarizeSelfMove(self, name, x, y, prevX, prevY, color, hasMoved):
         if self.gameStarted == True:
             #check if the move is possible
-            if self.model.canMove(name, prevX, prevY, x, y):
+            if self.model.canMove(name, prevX, prevY, x, y, color, hasMoved):
                 # if true update the board state and move piece
-                self.model.updateBoardState(name, prevX, prevY, x, y)
+
+                # if there is enemy piece on the field remove it
+                if self.model.currentBoardState[y][x] != 'empty':
+                    self.win.removePieceFromBoard(x, y)
                 self.movePiece(prevX, prevY, x, y)
+
+                self.model.updateBoardState(name, prevX, prevY, x, y, color)
+
 
                 text = self.convertGridCordinatesToTCPCordinates(name, x, y, prevX, prevY)
                 self.send(text)
@@ -788,7 +1042,10 @@ class Presenter():
                 self.updateCurrentPlayerTurn()
                 self.win.updateLabelCurrentPlayerTurn(self.currentPlayer)
 
+                self.clk.switchPlayer()
+
                 self.win.scene.update()
+                self.botMove()
                 return True
             else:
                 return False
@@ -803,8 +1060,27 @@ class Presenter():
             self.updateCurrentPlayerTurn()
             self.win.updateLabelCurrentPlayerTurn(self.currentPlayer)
             self.win.scene.update()
+
+            self.clk.switchPlayer()
+    def summarizeBotMove(self, name, x, y, prevX, prevY, color = 'black', hasMoved = False):
+        if self.gameStarted == True:
+            
+            if self.model.currentBoardState[y][x] != 'empty':
+                self.win.removePieceFromBoard(x, y)
+            self.movePiece(prevX, prevY, x, y)
+
+            self.model.updateBoardState(name, prevX, prevY, x, y, color)
+
+            self.updateCurrentPlayerTurn()
+            self.win.updateLabelCurrentPlayerTurn(self.currentPlayer)
+            self.win.scene.update()
+
+            self.clk.switchPlayer()
+
     def startGame(self, game_mode):
         if game_mode == 'AI bot':
+            self.gameStarted = True
+            self.humanPlayer = 'white'
             # for now this mode is not available
             pass
         elif game_mode == 'Player same PC':
@@ -816,13 +1092,24 @@ class Presenter():
                 self.send(f'Time{self.time}')
                 self.send('gameStarted')
                 self.clk.set(self.time)
+                self.clk.start()
                 self.win.initMainUI()
             elif self.iswho == 'client':
                 self.gameStarted = True
                 self.clk.set(self.time)
+                self.clk.start()
                 self.win.initMainUI()
-                
 
+    # AI bot methods
+    def botMove(self):
+        # check if it is AI bot turn
+        
+        # get the move from the model
+        name, x, y, prevX, prevY  = self.model.findBestMoveForBot()
+
+        # summarize the move
+        self.summarizeBotMove(name, x, y, prevX, prevY)
+        
 
     # slots methods
     def startGameSlot(self, game_mode):
@@ -875,6 +1162,10 @@ class Presenter():
             elif isWho == 'client':
                 if msg == 'connectionConfirmed':
                     self.win.writeTextToLabelConnectionStatus("Connection status: Server connected, waiting for host to start the game")
+    def reciveMsgFromOtherPlayer(self, msg):
+        # odejmij 3 pierwsze litery z stringa msg tak aby pozostała tylko wiadomość
+        msg = msg[3:]
+        self.win.writeCommunicationWithOtherPlayer(msg)
 
 
     # utility methods
@@ -1004,25 +1295,20 @@ class ChessPiece(QGraphicsSvgItem):
 
         newx, newy = self.convertNumericalToGridCordinates(self.x(), self.y())
         PrevX, PrevY = self.convertNumericalToGridCordinates(self.PrevX, self.PrevY)
-        if self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY) == True:
-            self.PrevX = newx
-            self.PrevY = newy
-
-            # render again the piece
-            self.renderer().load(self.svg_path)
-        elif self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY) == False:
-            self.setPos(self.PrevX, self.PrevY)
-        # if self.win.presenter.model.canMove(self.Name, self.PrevX, self.PrevY, newx, newy) and newx >= 0 and newx < 8 and newy >= 0 and newy < 8:
-        #     self.win.presenter.model.updateBoardState(self.Name, PrevX, PrevY, newx, newy)
-        #     self.win.presenter.updateSQLbase(self.win.presenter.convertGridToChessCordinates(newx, newy, self.Name))
-        #     self.win.presenter.updateMovesHistory(self.win.presenter.convertGridToChessCordinates(newx, newy, self.Name))
-        #     self.win.presenter.moves_history_from_where.append(self.win.presenter.convertGridToChessCordinates(PrevX, PrevY, self.Name))
-        #     self.setPos(newx * 80, newy * 80)
-        #     text = self.win.presenter.convertGridCordinatesToTCPCordinates(self.Name, newx, newy, PrevX, PrevY)
-        #     self.win.presenter.send(text)
-        #     # print(newx*80, newy*80)
-        # else:
+        # if not self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY, self.color, self.hasMoved) == True:
         #     self.setPos(self.PrevX, self.PrevY)
+        if self.win.presenter.model.canMove(self.Name, PrevX, PrevY, newx, newy, self.color, self.hasMoved) == True:
+            # print(self.win.presenter.model.canMove(self.Name, PrevX, PrevY, newx, newy, self.color, self.hasMoved))
+
+            debbug = self.win.presenter.summarizeSelfMove(self.Name, newx, newy, PrevX, PrevY, self.color, self.hasMoved)
+            # print(f'before {self.Name} from {PrevX}, {PrevY} to {newx}, {newy}. Has moved: {self.hasMoved}')
+            self.PrevX = newx * 80
+            self.PrevY = newy * 80
+            self.hasMoved = True
+            # print(f'after {self.Name}, prevX self {self.PrevX},  prevY self {self.PrevY} to {newx}, {newy}. Has moved: {self.hasMoved}')
+        else:
+            self.setPos(self.PrevX, self.PrevY)
+        
         super().mouseReleaseEvent(event)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
